@@ -1,0 +1,181 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Marvellous-Ben</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #d3d3d3; /* Gray background */
+        }
+        h1, h2 {
+            color: #0000ff; /* Blue headings */
+        }
+        .signal {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-image: url('/static/b-logo.jpg'); /* Background image */
+            background-size: cover; /* Cover the entire section */
+            background-position: center; /* Center the image */
+            background-repeat: no-repeat; /* No repeat */
+            position: relative; /* For overlay */
+        }
+        .signal::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black overlay */
+            z-index: 1; /* Below text */
+        }
+        .signal h2, .signal p {
+            color: white; /* White text for visibility */
+            position: relative; /* Above overlay */
+            z-index: 2; /* Above overlay */
+        }
+        .trades {
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-bottom: 20px;
+            background-color: #000000; /* Black background */
+        }
+        .trades table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        .trades th, .trades td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }
+        .trades th {
+            background-color: #f2f2f2;
+            color: #0000ff; /* Blue column headers */
+        }
+        .trades td {
+            white-space: nowrap; /* Prevent text wrapping */
+            color: white; /* Default white for Time, Price, Message text */
+        }
+        .trades {
+            overflow-x: auto; /* Horizontal scroll if needed */
+        }
+        .action-buy {
+            color: green !important; /* Green for Buy */
+        }
+        .action-sell {
+            color: red !important; /* Red for Sell */
+        }
+        .negative {
+            color: red !important; /* Red for negative numbers */
+        }
+        .non-negative {
+            color: green !important; /* Green for non-negative numbers */
+        }
+        .kdj-negative {
+            color: red; /* Red for KDJ J < 0.00 */
+        }
+        .kdj-overbought {
+            color: green; /* Green for KDJ J > 65.00 */
+        }
+        .kdj-neutral {
+            color: white; /* White for 0.00 <= KDJ J <= 65.00 */
+        }
+        .rsi-oversold {
+            color: red; /* Red for RSI < 15.00 */
+        }
+        .rsi-overbought {
+            color: green; /* Green for RSI > 60.00 */
+        }
+        .rsi-neutral {
+            color: white; /* White for 15.00 <= RSI <= 60.00 */
+        }
+        .error {
+            color: red;
+        }
+        @media (max-width: 768px) {
+            .trades table {
+                font-size: 14px; /* Smaller font on mobile */
+            }
+        }
+    </style>
+</head>
+<body>
+    <h1>Marvellous-Bn Trade-Net</h1>
+    <p>Status: {{ status }}</p>
+    <p>Timeframe: {{ timeframe }}</p>
+    <p>Stop Time: {{ stop_time }}</p>
+    {% if signal %}
+    <div class="signal">
+        <h2>Latest Signal</h2>
+        <p>Time: {{ signal.time }}</p>
+        <p>Timeframe: {{ signal.timeframe }}</p>
+        <p>Message: {{ signal.message }}</p>
+        <p>Price: {{ "%.2f"|format(signal.price) }}</p>
+        <p>Open: {{ "%.2f"|format(signal.open_price) }}</p>
+        <p>Close: {{ "%.2f"|format(signal.close_price) }}</p>
+        <p>Volume: {{ "%.2f"|format(signal.volume) }}</p>
+        <p>% Change: {{ "%.2f"|format(signal.percent_change) }}%</p>
+        <p>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</p>
+        <p>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</p>
+        <p>RSI (14): {{ "%.2f"|format(signal.rsi) }}</p>
+        <p>KDJ K: {{ "%.2f"|format(signal.k) }}</p>
+        <p>KDJ D: {{ "%.2f"|format(signal.d) }}</p>
+        <p>KDJ J: {{ "%.2f"|format(signal.j) }}</p>
+        {% if signal.stop_loss %}
+        <p>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</p>
+        {% endif %}
+        {% if signal.take_profit %}
+        <p>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</p>
+        {% endif %}
+        {% if signal.action in ["buy", "sell"] %}
+        <p>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</p>
+        {% endif %}
+        {% if signal.action == "sell" %}
+        <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+    <div class="trades">
+        <h2>Recent Trades</h2>
+        {% if trades %}
+        <table>
+            <tr>
+                <th>Time</th>
+                <th>Action</th>
+                <th>Price</th>
+                <th>% Change</th>
+                <th>Profit</th>
+                <th>Total Profit</th>
+                <th>Message</th>
+            </tr>
+            {% for trade in trades %}
+            <tr>
+                <td>{{ trade.time }}</td>
+                <td class="{% if trade.action == 'buy' %}action-buy{% elif trade.action == 'sell' %}action-sell{% endif %}">{{ trade.action }}</td>
+                <td>{{ "%.2f"|format(trade.price) }}</td>
+                <td class="{% if trade.percent_change < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.percent_change) }}%</td>
+                <td class="{% if trade.profit is not none and trade.profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.profit) if trade.profit else "N/A" }}</td>
+                <td class="{% if trade.total_profit is not none and trade.total_profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.total_profit) if trade.total_profit else "N/A" }}</td>
+                <td>
+                    KDJ J: <span class="{% if trade.j < 0 %}kdj-negative{% elif trade.j > 65 %}kdj-overbought{% else %}kdj-neutral{% endif %}">{{ "%.2f"|format(trade.j) }}</span>,
+                    RSI: <span class="{% if trade.rsi < 15 %}rsi-oversold{% elif trade.rsi > 60 %}rsi-overbought{% else %}rsi-neutral{% endif %}">{{ "%.2f"|format(trade.rsi) }}</span>,
+                    {{ trade.message }}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        {% else %}
+        <p>No trades available.</p>
+        {% endif %}
+    </div>
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(() => location.reload(), 30000);
+    </script>
+</body>
+</html>
