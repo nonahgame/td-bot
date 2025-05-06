@@ -7,20 +7,20 @@
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
-            background-color: #d3d3d3; /* Gray background */
+            background-color: #d3d3d3;
         }
         h1, h2 {
-            color: #0000ff; /* Blue headings */
+            color: #0000ff;
         }
         .signal {
             border: 1px solid #ccc;
             padding: 10px;
             margin-bottom: 20px;
-            background-image: url('/static/b-logo.jpg'); /* Background image */
-            background-size: cover; /* Cover the entire section */
-            background-position: center; /* Center the image */
-            background-repeat: no-repeat; /* No repeat */
-            position: relative; /* For overlay */
+            background-image: url('/static/b-logo.jpg');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            position: relative;
         }
         .signal::before {
             content: '';
@@ -29,19 +29,19 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black overlay */
-            z-index: 1; /* Below text */
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1;
         }
         .signal h2, .signal p {
-            color: white; /* White text for visibility */
-            position: relative; /* Above overlay */
-            z-index: 2; /* Above overlay */
+            color: white;
+            position: relative;
+            z-index: 2;
         }
         .trades {
             border: 1px solid #ccc;
             padding: 10px;
             margin-bottom: 20px;
-            background-color: #000000; /* Black background */
+            background-color: #000000;
         }
         .trades table {
             width: 100%;
@@ -55,51 +55,57 @@
         }
         .trades th {
             background-color: #f2f2f2;
-            color: #0000ff; /* Blue column headers */
+            color: #0000ff;
         }
         .trades td {
-            white-space: nowrap; /* Prevent text wrapping */
-            color: white; /* Default white for Time, Price, Message text */
+            white-space: nowrap;
+            color: white;
         }
         .trades {
-            overflow-x: auto; /* Horizontal scroll if needed */
+            overflow-x: auto;
         }
         .action-buy {
-            color: green !important; /* Green for Buy */
+            color: green !important;
         }
         .action-sell {
-            color: red !important; /* Red for Sell */
+            color: red !important;
         }
         .negative {
-            color: red !important; /* Red for negative numbers */
+            color: red !important;
         }
         .non-negative {
-            color: green !important; /* Green for non-negative numbers */
+            color: green !important;
         }
         .kdj-negative {
-            color: red; /* Red for KDJ J < 0.00 */
+            color: red;
         }
         .kdj-overbought {
-            color: green; /* Green for KDJ J > 65.00 */
+            color: green;
         }
         .kdj-neutral {
-            color: white; /* White for 0.00 <= KDJ J <= 65.00 */
+            color: white;
         }
         .rsi-oversold {
-            color: red; /* Red for RSI < 15.00 */
+            color: red;
         }
         .rsi-overbought {
-            color: green; /* Green for RSI > 60.00 */
+            color: green;
         }
         .rsi-neutral {
-            color: white; /* White for 15.00 <= RSI <= 60.00 */
+            color: white;
+        }
+        .diff-positive {
+            color: green;
+        }
+        .diff-negative {
+            color: red;
         }
         .error {
             color: red;
         }
         @media (max-width: 768px) {
             .trades table {
-                font-size: 14px; /* Smaller font on mobile */
+                font-size: 14px;
             }
         }
     </style>
@@ -123,6 +129,7 @@
         <p>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</p>
         <p>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</p>
         <p>RSI (14): {{ "%.2f"|format(signal.rsi) }}</p>
+        <p>Diff: {{ "%.2f"|format(signal.diff) }}</p>
         <p>KDJ K: {{ "%.2f"|format(signal.k) }}</p>
         <p>KDJ D: {{ "%.2f"|format(signal.d) }}</p>
         <p>KDJ J: {{ "%.2f"|format(signal.j) }}</p>
@@ -164,6 +171,7 @@
                 <td>
                     KDJ J: <span class="{% if trade.j < 0 %}kdj-negative{% elif trade.j > 65 %}kdj-overbought{% else %}kdj-neutral{% endif %}">{{ "%.2f"|format(trade.j) }}</span>,
                     RSI: <span class="{% if trade.rsi < 15 %}rsi-oversold{% elif trade.rsi > 60 %}rsi-overbought{% else %}rsi-neutral{% endif %}">{{ "%.2f"|format(trade.rsi) }}</span>,
+                    Diff: <span class="{% if trade.diff > -0.00 %}diff-positive{% else %}diff-negative{% endif %}">{{ "%.2f"|format(trade.diff) }}</span>,
                     {{ trade.message }}
                 </td>
             </tr>
@@ -174,7 +182,6 @@
         {% endif %}
     </div>
     <script>
-        // Auto-refresh every 30 seconds
         setTimeout(() => location.reload(), 30000);
     </script>
 </body>

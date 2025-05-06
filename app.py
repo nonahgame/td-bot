@@ -1,10 +1,11 @@
-# Import dependencies
+# Install dependencies the 1 use & testing working perfectly
+
 import os
 import pandas as pd
 import numpy as np
 import sqlite3
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import ccxt
 import pandas_ta as ta
 from telegram import Bot
@@ -34,14 +35,14 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "6797387984:AAGQEK5Tdc-FNuJt3ecTEQ5eP6rrarDNMKA")  # Replace with your Telegram bot token
 CHAT_ID = os.getenv("CHAT_ID", "672073574")        # Replace with your Telegram chat ID
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
-TIMEFRAME = os.getenv("TIMEFRAME", "5m")
+TIMEFRAME = os.getenv("TIMEFRAME", "5m")  # 1 minute
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
-STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))  # Stop after 1 hour; adjust as needed
+STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 5400))  # 1 hour
 
 # Global state
 bot_thread = None
-bot_active = True  # Start bot automatically
+bot_active = True
 bot_lock = threading.Lock()
 conn = None
 exchange = ccxt.kraken()
@@ -53,6 +54,7 @@ pause_start = None
 latest_signal = None
 start_time = datetime.now()
 stop_time = start_time + pd.Timedelta(seconds=STOP_AFTER_SECONDS)
+last_valid_price = None
 
 # Keep-alive mechanism
 def keep_alive():
@@ -95,40 +97,51 @@ def setup_database():
                     k REAL,
                     d REAL,
                     j REAL,
+                    diff REAL,
                     message TEXT,
                     timeframe TEXT
                 )
             ''')
         c.execute("PRAGMA table_info(trades);")
         columns = [col[1] for col in c.fetchall()]
-        for col in ['message', 'timeframe']:
+        for col in ['message', 'timeframe', 'diff']:
             if col not in columns:
-                c.execute(f'ALTER TABLE trades ADD COLUMN {col} TEXT;')
+                c.execute(f'ALTER TABLE trades ADD COLUMN {col} {"TEXT" if col != "diff" else "REAL"};')
         conn.commit()
         logger.info(f"Database initialized at {db_path}")
     except Exception as e:
         logger.error(f"Database setup error: {e}")
         raise
 
-# Fetch price data
+# Fetch price data with improved handling
 def get_simulated_price(symbol=SYMBOL, exchange=exchange, timeframe=TIMEFRAME, retries=3, delay=5):
+    global last_valid_price
     for attempt in range(retries):
         try:
-            ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=1)
+            ohlcv = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=5)
             if not ohlcv:
                 logger.warning(f"No data returned for {symbol}. Retrying...")
                 time.sleep(delay)
                 continue
             data = pd.DataFrame(ohlcv, columns=['timestamp', 'Open', 'High', 'Low', 'Close', 'Volume'])
             data['timestamp'] = pd.to_datetime(data['timestamp'], unit='ms', utc=True)
-            logger.debug(f"Fetched price data: {data.iloc[-1].to_dict()}")
-            return data.iloc[-1]
+            data['diff'] = data['Close'] - data['Open']
+            non_zero_diff = data[abs(data['diff']) > 0]
+            selected_data = non_zero_diff.iloc[-1] if not non_zero_diff.empty else data.iloc[-1]
+            if abs(selected_data['diff']) < 0.01:
+                logger.warning(f"Open and Close similar for {symbol} (diff={selected_data['diff']}). Accepting data.")
+            last_valid_price = selected_data
+            logger.debug(f"Fetched price data: {selected_data.to_dict()}")
+            return selected_data
         except Exception as e:
             logger.error(f"Error fetching price (attempt {attempt + 1}/{retries}): {e}")
             if attempt < retries - 1:
                 time.sleep(delay)
     logger.error(f"Failed to fetch price for {symbol} after {retries} attempts.")
-    return pd.Series({'Open': np.nan, 'Close': np.nan, 'High': np.nan, 'Low': np.nan, 'Volume': np.nan})
+    if last_valid_price is not None:
+        logger.info("Using last valid price data as fallback.")
+        return last_valid_price
+    return pd.Series({'Open': np.nan, 'Close': np.nan, 'High': np.nan, 'Low': np.nan, 'Volume': np.nan, 'diff': np.nan})
 
 # Calculate technical indicators
 def add_technical_indicators(df):
@@ -140,7 +153,8 @@ def add_technical_indicators(df):
         df['k'] = kdj['K_9_3']
         df['d'] = kdj['D_9_3']
         df['j'] = kdj['J_9_3']
-        logger.debug(f"Technical indicators calculated: {df.iloc[-1][['ema1', 'ema2', 'rsi', 'k', 'd', 'j']].to_dict()}")
+        df['diff'] = df['Close'] - df['Open']
+        logger.debug(f"Technical indicators calculated: {df.iloc[-1][['ema1', 'ema2', 'rsi', 'k', 'd', 'j', 'diff']].to_dict()}")
         return df
     except Exception as e:
         logger.error(f"Error calculating indicators: {e}")
@@ -157,6 +171,7 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
     stop_loss = None
     take_profit = None
     action = "hold"
+
     if position == "long" and buy_price is not None:
         stop_loss = buy_price * (1 + stop_loss_percent / 100)
         take_profit = buy_price * (1 + take_profit_percent / 100)
@@ -166,21 +181,30 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
         elif close_price >= take_profit:
             logger.info("Take-profit triggered.")
             action = "sell"
+        elif close_price < open_price:
+            logger.info("Sell signal detected (Close < Open).")
+            action = "sell"
+
     if action == "hold" and position is None and close_price > open_price:
         logger.info("Buy signal detected (Close > Open).")
         action = "buy"
-    if action == "hold" and position == "long" and close_price < open_price:
-        logger.info("Sell signal detected (Close < Open).")
-        action = "sell"
+
+    if action == "buy" and position is not None:
+        logger.debug("Prevented consecutive buy order.")
+        action = "hold"
+    if action == "sell" and position is None:
+        logger.debug("Prevented sell order without open position.")
+        action = "hold"
+
+    logger.debug(f"AI decision: action={action}, stop_loss={stop_loss}, take_profit={take_profit}")
     return action, stop_loss, take_profit
 
-# Telegram message sending with retries
+# Telegram message sending
 def send_telegram_message(signal, bot_token, chat_id, retries=3, delay=5):
     for attempt in range(retries):
         try:
-            start_time = time.time()
-            logger.debug(f"Attempt {attempt + 1}/{retries} to send Telegram message")
             bot = Bot(token=bot_token)
+            diff_color = "🟢" if signal['diff'] > 0 else "🔴"
             message = f"""
 Time: {signal['time']}
 Timeframe: {signal['timeframe']}
@@ -193,6 +217,7 @@ Volume: {signal['volume']:.2f}
 EMA1 (12): {signal['ema1']:.2f}
 EMA2 (26): {signal['ema2']:.2f}
 RSI (14): {signal['rsi']:.2f}
+Diff: {diff_color} {signal['diff']:.2f}
 KDJ K: {signal['k']:.2f}
 KDJ D: {signal['d']:.2f}
 KDJ J: {signal['j']:.2f}
@@ -202,8 +227,7 @@ KDJ J: {signal['j']:.2f}
 {f"Profit: {signal['profit']:.2f}" if signal['action'] == "sell" else ""}
 """
             bot.send_message(chat_id=chat_id, text=message)
-            elapsed = time.time() - start_time
-            logger.info(f"Telegram message sent successfully in {elapsed:.2f} seconds")
+            logger.info(f"Telegram message sent successfully")
             return
         except Exception as e:
             logger.error(f"Error sending Telegram message (attempt {attempt + 1}/{retries}): {e}")
@@ -211,10 +235,50 @@ KDJ J: {signal['j']:.2f}
                 time.sleep(delay)
     logger.error(f"Failed to send Telegram message after {retries} attempts")
 
+# Delete Telegram webhook
+def delete_webhook():
+    try:
+        bot = Bot(token=BOT_TOKEN)
+        bot.delete_webhook()
+        logger.info("Telegram webhook deleted successfully")
+    except Exception as e:
+        logger.error(f"Error deleting Telegram webhook: {e}")
+
+# Parse timeframe to seconds
+def timeframe_to_seconds(timeframe):
+    try:
+        value = int(timeframe[:-1])
+        unit = timeframe[-1].lower()
+        if unit == 'm':
+            return value * 60
+        elif unit == 'h':
+            return value * 3600
+        elif unit == 'd':
+            return value * 86400
+        else:
+            logger.error(f"Unsupported timeframe unit: {unit}")
+            return 60  # Default to 1 minute
+    except Exception as e:
+        logger.error(f"Error parsing timeframe {timeframe}: {e}")
+        return 60
+
+# Align to next time boundary
+def align_to_next_boundary(interval_seconds):
+    now = datetime.now()
+    seconds_since_epoch = now.timestamp()
+    seconds_to_next = interval_seconds - (seconds_since_epoch % interval_seconds)
+    if seconds_to_next == interval_seconds:
+        seconds_to_next = 0
+    next_boundary = now + timedelta(seconds=seconds_to_next)
+    # Round down to the nearest second for clean alignment
+    next_boundary = next_boundary.replace(microsecond=0)
+    return seconds_to_next, next_boundary
+
 # Trading bot logic
 def trading_bot():
-    global bot_active, position, buy_price, total_profit, pause_duration, pause_start, latest_signal, conn
+    global bot_active, position, buy_price, total_profit, pause_duration, pause_start, latest_signal, conn, last_valid_price
     setup_database()
+    delete_webhook()
     bot = Bot(token=BOT_TOKEN)
     last_update_id = 0
     df = None
@@ -234,6 +298,8 @@ def trading_bot():
             df['Low'] = df['Low'].fillna(df['Close'])
             df = add_technical_indicators(df)
             logger.info(f"Initial df shape: {df.shape}")
+            last_valid_price = df.iloc[-1][['Open', 'High', 'Low', 'Close', 'Volume']]
+            last_valid_price['diff'] = last_valid_price['Close'] - last_valid_price['Open']
             break
         except Exception as e:
             logger.error(f"Error fetching historical data (attempt {attempt + 1}/3): {e}")
@@ -243,9 +309,22 @@ def trading_bot():
                 logger.error(f"Failed to fetch historical data for {SYMBOL}.")
                 return
 
+    # Calculate interval seconds from TIMEFRAME
+    interval_seconds = timeframe_to_seconds(TIMEFRAME)
+    logger.info(f"Using interval of {interval_seconds} seconds for timeframe {TIMEFRAME}")
+
+    # Align to next time boundary
+    seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
+    if seconds_to_next > 0:
+        logger.info(f"Waiting {seconds_to_next:.2f} seconds to align with next boundary at {next_boundary.strftime('%Y-%m-%d %H:%M:%S')}")
+        time.sleep(seconds_to_next)
+    logger.info(f"Bot aligned to boundary at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+
+    stats_interval = 300
+    last_stats_time = datetime.now()
+
     while True:
         with bot_lock:
-            # Check if stop time is reached
             if datetime.now() >= stop_time:
                 bot_active = False
                 if position == "long":
@@ -255,7 +334,6 @@ def trading_bot():
                         total_profit += profit
                         signal = create_signal("sell", latest_data['Close'], latest_data, df, profit, total_profit, "Bot stopped due to time limit")
                         store_signal(signal)
-                        # Send shutdown message synchronously
                         send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
                     position = None
                 logger.info("Bot stopped due to time limit")
@@ -266,7 +344,6 @@ def trading_bot():
                 continue
 
         try:
-            # Handle pause
             if pause_start and pause_duration > 0:
                 elapsed = (datetime.now() - pause_start).total_seconds()
                 if elapsed < pause_duration:
@@ -279,16 +356,22 @@ def trading_bot():
                     position = None
                     logger.info("Bot resumed after pause")
 
-            # Fetch price data
+            # Ensure cycle starts at boundary
+            now = datetime.now()
+            seconds_since_epoch = now.timestamp()
+            if seconds_since_epoch % interval_seconds > 1:  # Allow 1-second tolerance
+                seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
+                logger.debug(f"Cycle misaligned, waiting {seconds_to_next:.2f} seconds for {next_boundary.strftime('%Y-%m-%d %H:%M:%S')}")
+                time.sleep(seconds_to_next)
+
             latest_data = get_simulated_price()
             if pd.isna(latest_data['Close']):
                 logger.warning("Skipping cycle due to missing price data.")
-                time.sleep(60)
+                time.sleep(interval_seconds)
                 continue
             current_price = latest_data['Close']
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            # Process Telegram commands
             try:
                 updates = bot.get_updates(offset=last_update_id, timeout=10)
                 for update in updates:
@@ -296,7 +379,7 @@ def trading_bot():
                         text = update.message.text.strip()
                         command_chat_id = update.message.chat.id
                         if text == '/help':
-                            bot.send_message(chat_id=command_chat_id, text="Commands: /help, /stop, /stopN, /start, /status, /performance, /count")
+                            bot.send_message(chat_id=command_chat_id, text="Commands: /help, /stop, /stopN, /start, /status, /performance, /count, /stats")
                         elif text == '/stop':
                             with bot_lock:
                                 if bot_active and position == "long":
@@ -310,7 +393,7 @@ def trading_bot():
                             bot.send_message(chat_id=command_chat_id, text="Bot stopped.")
                         elif text.startswith('/stop') and text[5:].isdigit():
                             multiplier = int(text[5:])
-                            timeframe_seconds = {'1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400}.get(TIMEFRAME, 300)
+                            timeframe_seconds = interval_seconds
                             with bot_lock:
                                 pause_duration = multiplier * timeframe_seconds
                                 pause_start = datetime.now()
@@ -338,23 +421,24 @@ def trading_bot():
                             bot.send_message(chat_id=command_chat_id, text=get_performance())
                         elif text == '/count':
                             bot.send_message(chat_id=command_chat_id, text=get_trade_counts())
+                        elif text == '/stats':
+                            bot.send_message(chat_id=command_chat_id, text="Trade statistics printed to console. Run display_trade_statistics in a separate cell.")
                     last_update_id = update.update_id + 1
             except Exception as e:
                 logger.error(f"Error processing Telegram updates: {e}")
 
-            # Update dataframe
             new_row = pd.DataFrame({
                 'Open': [latest_data['Open']],
                 'Close': [latest_data['Close']],
                 'High': [latest_data['High']],
                 'Low': [latest_data['Low']],
-                'Volume': [latest_data['Volume']]
+                'Volume': [latest_data['Volume']],
+                'diff': [latest_data['diff']]
             }, index=[pd.Timestamp.now(tz='UTC')])
             df = pd.concat([df, new_row]).tail(100)
             df = add_technical_indicators(df)
 
-            # Generate signal
-            prev_close = df['Close'].iloc[-2] if len(df) >= 2 else df['Close'].iloc[-1]
+            prev_close = df['Close'].iloc[-1] if len(df) >= 2 else df['Close'].iloc[-1]
             percent_change = ((current_price - prev_close) / prev_close * 100) if prev_close != 0 else 0.0
             recommended_action, stop_loss, take_profit = ai_decision(df, position=position, buy_price=buy_price)
 
@@ -381,15 +465,24 @@ def trading_bot():
                 signal = create_signal(action, current_price, latest_data, df, profit, total_profit, msg)
                 store_signal(signal)
                 if bot_active and action != "hold":
-                    # Send Telegram message in a separate thread
                     threading.Thread(target=send_telegram_message, args=(signal, BOT_TOKEN, CHAT_ID), daemon=True).start()
                 latest_signal = signal
 
-            timeframe_seconds = {'1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400}.get(TIMEFRAME, 300)
-            time.sleep(timeframe_seconds)
+            if (datetime.now() - last_stats_time).total_seconds() >= stats_interval:
+                logger.info("Periodic trade statistics would be displayed here. Run display_trade_statistics in a separate cell.")
+                last_stats_time = datetime.now()
+
+            # Sleep until the next boundary
+            seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
+            if seconds_to_next < 1:
+                seconds_to_next += interval_seconds
+                next_boundary += timedelta(seconds=interval_seconds)
+            logger.debug(f"Sleeping for {seconds_to_next:.2f} seconds until next boundary at {next_boundary.strftime('%Y-%m-%d %H:%M:%S')}")
+            time.sleep(seconds_to_next)
         except Exception as e:
             logger.error(f"Error in trading loop: {e}")
-            time.sleep(60)
+            seconds_to_next, _ = align_to_next_boundary(interval_seconds)
+            time.sleep(seconds_to_next if seconds_to_next > 1 else interval_seconds)
 
 # Helper functions
 def create_signal(action, current_price, latest_data, df, profit, total_profit, msg):
@@ -414,6 +507,7 @@ def create_signal(action, current_price, latest_data, df, profit, total_profit, 
         'k': latest['k'],
         'd': latest['d'],
         'j': latest['j'],
+        'diff': latest['diff'],
         'message': msg
     }
 
@@ -424,15 +518,16 @@ def store_signal(signal):
             INSERT INTO trades (
                 time, action, symbol, price, open_price, close_price, volume,
                 percent_change, stop_loss, take_profit, profit, total_profit,
-                ema1, ema2, rsi, k, d, j, message, timeframe
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ema1, ema2, rsi, k, d, j, diff, message, timeframe
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ''', (
             signal['time'], signal['action'], signal['symbol'], signal['price'],
             signal['open_price'], signal['close_price'], signal['volume'],
             signal['percent_change'], signal['stop_loss'], signal['take_profit'],
             signal['profit'], signal['total_profit'],
             signal['ema1'], signal['ema2'], signal['rsi'],
-            signal['k'], signal['d'], signal['j'], signal['message'], signal['timeframe']
+            signal['k'], signal['d'], signal['j'], signal['diff'],
+            signal['message'], signal['timeframe']
         ))
         conn.commit()
         logger.debug("Signal stored successfully")
@@ -444,7 +539,6 @@ def get_performance():
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM trades")
         trade_count = c.fetchone()[0]
-        logger.debug(f"Total trades in database: {trade_count}")
         if trade_count == 0:
             return "No trades available for performance analysis."
 
@@ -466,7 +560,6 @@ Win Trades: {win_trades}
 Loss Trades: {loss_trades}
 Total Profit: {total_profit_db:.2f}
 """
-        logger.info("Performance data generated successfully")
         return message
     except Exception as e:
         logger.error(f"Error fetching performance: {e}")
@@ -499,7 +592,6 @@ Win Trades: {win_trades}
 Loss Trades: {loss_trades}
 Total Profit: {total_profit_db:.2f}
 """
-        logger.debug("Trade counts generated successfully")
         return message
     except Exception as e:
         logger.error(f"Error fetching trade counts: {e}")
@@ -515,8 +607,10 @@ def index():
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
         stop_time_str = stop_time.strftime("%Y-%m-%d %H:%M:%S")
-        logger.info("Rendering index.html with trades")
-        return render_template('index.html', signal=latest_signal, status=status, timeframe=TIMEFRAME, trades=trades, stop_time=stop_time_str)
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        logger.info(f"Rendering index.html: status={status}, timeframe={TIMEFRAME}, trades={len(trades)}, signal={latest_signal}")
+        return render_template('index.html', signal=latest_signal, status=status, timeframe=TIMEFRAME,
+                             trades=trades, stop_time=stop_time_str, current_time=current_time)
     except Exception as e:
         logger.error(f"Error rendering index.html: {e}")
         return jsonify({"error": "Failed to render template"}), 500
@@ -536,7 +630,6 @@ def trades():
         c = conn.cursor()
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
-        logger.debug(f"Fetched {len(trades)} trades for /trades endpoint")
         return jsonify(trades)
     except Exception as e:
         logger.error(f"Error fetching trades: {e}")
@@ -557,18 +650,9 @@ if bot_thread is None or not bot_thread.is_alive():
     bot_thread.start()
     logger.info("Trading bot started automatically")
 
-# Run Flask app in Colab for testing
+# Run Flask app in Colab
 if __name__ == "__main__":
-    # Verify template exists
-    logger.info("Checking for templates/index.html")
-    if not os.path.exists('templates/index.html'):
-        logger.error("Template file 'templates/index.html' not found")
-        raise FileNotFoundError("Template file 'templates/index.html' not found")
-        
-    # Start keep-alive thread
+
     logger.info("Starting keep-alive thread")
     keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
     keep_alive_thread.start()
-
-    #
-    
