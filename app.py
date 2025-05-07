@@ -1,5 +1,5 @@
 # Install dependencies the 1 use & testing working perfectly
-
+#"td-bot-99"
 import os
 import pandas as pd
 import numpy as np
@@ -656,3 +656,5 @@ if __name__ == "__main__":
     logger.info("Starting keep-alive thread")
     keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
     keep_alive_thread.start()
+    
+    app.run(host='0.0.0.0',debug=True)

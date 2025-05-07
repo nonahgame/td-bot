@@ -1,5 +1,5 @@
 
-app = "td-bot-99"
+app = "app.py"
 primary_region = "iad"
 
 [build]
