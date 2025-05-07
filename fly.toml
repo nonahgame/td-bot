@@ -1,5 +1,5 @@
 
-app = "app.py"
+app = "app-py"
 primary_region = "iad"
 
 [build]
