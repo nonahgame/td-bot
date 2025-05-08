@@ -1,5 +1,5 @@
 
-app = "td-bot"
+app = "nonah"
 primary_region = "iad"
 
 [build]
