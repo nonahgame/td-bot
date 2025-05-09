@@ -2,7 +2,7 @@ app = "nonah"
 primary_region = "iad"
 
 [build]
-  builder = "paketobuildpacks/builder-jammy-base:latest"
+  builder = "Dockerfile"
 [build.args]
     CACHE_BUST = "2025-05-10"
 
