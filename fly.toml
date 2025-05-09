@@ -2,7 +2,7 @@ app = "nonah"
 primary_region = "iad"
 
 [build]
-  builder = "Dockerfile"
+  builder = "paketobuildpacks/builder-jammy-base:latest"
 [build.args]
     CACHE_BUST = "2025-05-10"
 
@@ -15,7 +15,7 @@ primary_region = "iad"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["app"]
+  processes = ["Dockerfile"]
 
    [[services.ports]]
     port = 0.0
