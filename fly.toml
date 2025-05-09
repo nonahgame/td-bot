@@ -15,7 +15,7 @@ primary_region = "iad"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 0
-  processes = ["Docker"]
+  processes = ["app"]
 
    [[services.ports]]
     port = 0.0
