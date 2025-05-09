@@ -38,7 +38,7 @@ SYMBOL = os.getenv("SYMBOL", "BTC/USD")
 TIMEFRAME = os.getenv("TIMEFRAME", "5m")  # 1 minute
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
-STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 5400))  # 1 hour
+STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))  # 1 hour
 
 # Global state
 bot_thread = None
