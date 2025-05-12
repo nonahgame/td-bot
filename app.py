@@ -681,4 +681,4 @@ if __name__ == "__main__":
     keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
     keep_alive_thread.start()
     
-    app.run(host = '0.0.0.0', debug = False)
+    app.run(host = '0.0.0.0', debug = True)
