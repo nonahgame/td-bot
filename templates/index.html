@@ -119,7 +119,7 @@
     {% endif %}
     <div class="signal">
         <h2>Latest Signal</h2>
-        {% if signal and signal.message == | != 'No signal yet' %}
+        {% if signal and signal.message == or != 'No signal yet' %}
             <p>Time: {{ signal.time }}</p>
             <p>Timeframe: {{ signal.timeframe }}</p>
             <p>Message: {{ signal.message }}</p>
