@@ -136,16 +136,16 @@
             <p>KDJ D: {{ "%.2f"|format(signal.d) }}</p>
             <p>KDJ J: {{ "%.2f"|format(signal.j) }}</p>
             {% if signal.stop_loss %}
-                <p>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</p>
+            <p>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</p>
             {% endif %}
             {% if signal.take_profit %}
-                <p>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</p>
+            <p>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</p>
             {% endif %}
             {% if signal.action in ["buy", "sell"] %}
-                <p>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</p>
+            <p>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</p>
             {% endif %}
             {% if signal.action == "sell" %}
-                <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
+            <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
             {% endif %}
         {% else %}
             <p></p>
