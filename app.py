@@ -32,8 +32,8 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "6797387984:AAGQEK5Tdc-FNuJt3ecTEQ5eP6rrarDNMKA")  # Replace with your Telegram bot token
-CHAT_ID = os.getenv("CHAT_ID", "672073574")        # Replace with your Telegram chat ID
+BOT_TOKEN = os.getenv("BOT_TOKEN", "BOT_TOKEN")  # Replace with your Telegram bot token "6797387984:AAGQEK5Tdc-FNuJt3ecTEQ5eP6rrarDNMKA"
+CHAT_ID = os.getenv("CHAT_ID", "CHAT_ID")        # Replace with your Telegram chat ID "672073574"
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
 TIMEFRAME = os.getenv("TIMEFRAME", "5m")  # 1 minute
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
