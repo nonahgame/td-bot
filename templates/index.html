@@ -117,6 +117,7 @@
     <p>Stop Time: {{ stop_time }}</p>
     {% if signal %}
     {% endif %}
+    {% if signal %}
     <div class="signal">
         <h2>Present Trading</h2>
         <p>Time: {{ signal.time }}</p>
@@ -147,6 +148,7 @@
         <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
         {% endif %}
     </div>
+    {% endif %}
     {% if signal %}
     {% endif %}
     <div class="trades">
