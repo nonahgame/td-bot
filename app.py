@@ -51,7 +51,29 @@ buy_price = None
 total_profit = 0
 pause_duration = 0
 pause_start = None
-latest_signal = None
+# md 1
+latest_signal = {
+    'time': 'N/A',
+    'action': 'N/A',
+    'symbol': SYMBOL,
+    'price': 0.0,
+    'open_price': 0.0,
+    'close_price': 0.0,
+    'volume': 0.0,
+    'percent_change': 0.0,
+    'stop_loss': None,
+    'take_profit': None,
+    'profit': 0.0,
+    'total_profit': 0.0,
+    'ema1': 0.0,
+    'ema2': 0.0,
+    'rsi': 0.0,
+    'k': 0.0,
+    'd': 0.0,
+    'j': 0.0,
+    'message': 'No signal yet',
+    'timeframe': TIMEFRAME
+}
 start_time = datetime.now()
 stop_time = start_time + pd.Timedelta(seconds=STOP_AFTER_SECONDS)
 last_valid_price = None
@@ -603,6 +625,7 @@ def index():
     global latest_signal, stop_time
     status = "active" if bot_active else "stopped"
     try:
+        logger.debug(f"Rendering index.html with latest_signal: {latest_signal}")
         c = conn.cursor()
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
