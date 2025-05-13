@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html>
 <head>
@@ -117,6 +116,7 @@
     <p>Stop Time: {{ stop_time }}</p>
     {% if signal %}
     {% endif %}
+    {% if signal %}
     <div class="signal">
         <h2>Latest Signal</h2>
         {% if signal and signal.message == or != 'No signal yet' %}
@@ -149,7 +149,7 @@
             {% endif %}
         {% endif %}
     </div>
-    
+    {% endif %}
     {% if signal %}
     {% endif %}
     <div class="trades">
