@@ -1,29 +1,21 @@
-<marquee style="color: green; width: 70%;"><b><h3><p>
-<li>Time: {{ signal.time }}</li>
-<li>Timeframe: {{ signal.timeframe }}</li>
-<li>Message: {{ signal.message }}</li>
-<li>Price: {{ "%.2f"|format(signal.price) }}</li>
-<li>Open: {{ "%.2f"|format(signal.open_price) }}</li>
-<li>Close: {{ "%.2f"|format(signal.close_price) }}</li>
-<li>Volume: {{ "%.2f"|format(signal.volume) }}</li>
-<li>% Change: {{ "%.2f"|format(signal.percent_change) }}%</li>
-<li>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</li>
-<li>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</li>
-<li>RSI (14): {{ "%.2f"|format(signal.rsi) }}</li>
-<li>Diff: {{ "%.2f"|format(signal.diff) }}</li>
-<li>KDJ K: {{ "%.2f"|format(signal.k) }}</li>
-<li>KDJ D: {{ "%.2f"|format(signal.d) }}</li>
-<li>KDJ J: {{ "%.2f"|format(signal.j) }}</li>
+<marquee style="color: green; width: 70%;"><b><h3>{% if signal %}<p>
+<li>Time: {{ signal.time }}</li>, <li>Timeframe: {{ signal.timeframe }}</li>, <li>Message: {{ signal.message }}</li>,
+ <li>Price: {{ "%.2f"|format(signal.price) }}</li>, <li>Open: {{ "%.2f"|format(signal.open_price) }}</li>, <li>Close: {{ "%.2f"|format(signal.close_price) }}</li>,
+ <li>Volume: {{ "%.2f"|format(signal.volume) }}</li>, <li>% Change: {{ "%.2f"|format(signal.percent_change) }}%</li>, 
+<li>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</li>, <li>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</li>, 
+<li>RSI (14): {{ "%.2f"|format(signal.rsi) }}</li>, <li>Diff: {{ "%.2f"|format(signal.diff) }}</li>, 
+<li>KDJ K: {{ "%.2f"|format(signal.k) }}</li>, <li>KDJ D: {{ "%.2f"|format(signal.d) }}</li>, 
+<li>KDJ J: {{ "%.2f"|format(signal.j) }}</li>, 
 {% if signal.stop_loss %}
-<li>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</li>
+<li>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</li>, 
 {% endif %}
 {% if signal.take_profit %}
-<li>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</li>
+<li>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</li>, 
 {% endif %}
 {% if signal.action in ["buy", "sell"] %}
-<li>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</li>
+<li>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</li>, 
 {% endif %}
 {% if signal.action == "sell" %}
 <li>Profit: {{ "%.2f"|format(signal.profit) }}</li>
 {% endif %}
-</p></h3></b></marquee>
+</p>{% endif %}</h3></b></marquee>
