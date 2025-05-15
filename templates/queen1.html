@@ -1,5 +1,4 @@
 <marquee style="color: green; width: 70%;"><b><h3>
-   {% if signal and signal.message == or != 'No signal yet' %}
         <p>Time: {{ signal.time }}</p>
         <p>Timeframe: {{ signal.timeframe }}</p>
         <p>Message: {{ signal.message }}</p>
@@ -27,5 +26,4 @@
         {% if signal.action == "sell" %}
         <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
         {% endif %}
-  {% endif %}
 </h3></b></marquee>
