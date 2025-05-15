@@ -1,4 +1,4 @@
-<marquee style="color: green; width: 70%;"><h3>{% if signal %}<p>
+<marquee style="color: green; width: 70%;"><h3><p>{% if signal %}
 <b>Time: {{ signal.time }}</b> <b>Timeframe: {{ signal.timeframe }}</b> <b>Message: {{ signal.message }}</b>
  <b>Price: {{ "%.2f"|format(signal.price) }}</b> <b>Open: {{ "%.2f"|format(signal.open_price) }}</b>, <b>Close: {{ "%.2f"|format(signal.close_price) }}</b>
  <b>Volume: {{ "%.2f"|format(signal.volume) }}</b> <b>% Change: {{ "%.2f"|format(signal.percent_change) }}%</b> 
@@ -18,4 +18,4 @@
 {% if signal.action == "sell" %}
 <b>Profit: {{ "%.2f"|format(signal.profit) }}</b>
 {% endif %}
-</p>{% endif %}</h3></marquee>
+{% endif %}</p></h3></marquee>
