@@ -1,0 +1,31 @@
+<marquee style="color: green; width: 70%;"><b><h3>
+   {% if signal and signal.message == or != 'No signal yet' %}
+        <p>Time: {{ signal.time }}</p>
+        <p>Timeframe: {{ signal.timeframe }}</p>
+        <p>Message: {{ signal.message }}</p>
+        <p>Price: {{ "%.2f"|format(signal.price) }}</p>
+        <p>Open: {{ "%.2f"|format(signal.open_price) }}</p>
+        <p>Close: {{ "%.2f"|format(signal.close_price) }}</p>
+        <p>Volume: {{ "%.2f"|format(signal.volume) }}</p>
+        <p>% Change: {{ "%.2f"|format(signal.percent_change) }}%</p>
+        <p>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</p>
+        <p>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</p>
+        <p>RSI (14): {{ "%.2f"|format(signal.rsi) }}</p>
+        <p>Diff: {{ "%.2f"|format(signal.diff) }}</p>
+        <p>KDJ K: {{ "%.2f"|format(signal.k) }}</p>
+        <p>KDJ D: {{ "%.2f"|format(signal.d) }}</p>
+        <p>KDJ J: {{ "%.2f"|format(signal.j) }}</p>
+        {% if signal.stop_loss %}
+          <p>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</p>
+        {% endif %}
+        {% if signal.take_profit %}
+          <p>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</p>
+        {% endif %}
+        {% if signal.action in ["buy", "sell"] %}
+          <p>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</p>
+        {% endif %}
+        {% if signal.action == "sell" %}
+          <p>Profit: {{ "%.2f"|format(signal.profit) }}</p>
+        {% endif %}
+  {% endif %}
+</h3></b></marquee>
