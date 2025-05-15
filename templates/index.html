@@ -114,9 +114,10 @@
     <p>Status: {{ status }}</p>
     <p>Timeframe: {{ timeframe }}</p>
     <p>Stop Time: {{ stop_time }}</p>   {% include 'queen.html'%}
+    <div>
     {% if signal %}
     {% endif %}
-    <div class="signal">
+    <spame class="signal">
         <h2>Latest Signal</h2>
         <p>{% if signal and signal.message != 'No signal yet' %}
         <li>Time: {{ signal.time }}</li>
@@ -147,9 +148,10 @@
         <li>Profit: {{ "%.2f"|format(signal.profit) }}</li>
         {% endif %}
         {% endif %}</p>
-    </div>
+    </spame>
     {% if signal %}
     {% endif %}
+    </div>
     <div class="trades">
         <h2>Recent Trades</h2>
         {% if trades %}
