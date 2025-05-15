@@ -110,14 +110,13 @@
     </style>
 </head>
 <body>
-    <div class="signal">
     <h1>Marvellous-Bn Trade-Net</h1>   {% include 'queen1.html'%}
     <p>Status: {{ status }}</p>
     <p>Timeframe: {{ timeframe }}</p>
     <p>Stop Time: {{ stop_time }}</p>   {% include 'queen.html'%}
     {% if signal %}
     {% endif %}
-    
+    <div class="signal">
         <h2>Latest Signal</h2>
         <p>{% if signal and signal.message != 'No signal yet' %}
         <li>Time: {{ signal.time }}</li>
