@@ -117,7 +117,7 @@
     <p>Stop Time: {{ stop_time }}</p>   {% include 'queen.html'%}
     {% if signal %}
     {% endif %}
-    <spame class="signal">
+    <div class="signal">
         <h2>Latest Signal</h2>
         <p>{% if signal and signal.message != 'No signal yet' %}
         <li>Time: {{ signal.time }}</li>
@@ -148,7 +148,7 @@
         <li>Profit: {{ "%.2f"|format(signal.profit) }}</li>
         {% endif %}
         {% endif %}</p>
-    </spame>
+    </div>
     {% if signal %}
     {% endif %}
     </div>
