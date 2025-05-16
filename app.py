@@ -23,7 +23,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.DEBUG,
     handlers=[
-        logging.FileHandler('at00_bot.log'),
+        logging.FileHandler('renda_bot.log'),
         logging.StreamHandler()
     ]
 )
@@ -159,9 +159,9 @@ last_valid_price = None
 # SQLite database setup
 def setup_database():
     global conn
-    db_path = 'at00_bot.db'
+    db_path = 'renda_bot.db'
     try:
-        if download_from_google_drive('at00_bot.db', GOOGLE_DRIVE_FOLDER_ID, db_path):
+        if download_from_google_drive('renda_bot.db', GOOGLE_DRIVE_FOLDER_ID, db_path):
             logger.info(f"Restored database from Google Drive to {db_path}")
         else:
             logger.info(f"No existing database found. Creating new database at {db_path}")
