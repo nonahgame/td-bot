@@ -748,7 +748,7 @@ def index():
             return jsonify({"error": "Database not initialized. Please check server logs."}), 500
         logger.debug(f"Rendering index.html with latest_signal: {latest_signal}")
         c = conn.cursor()
-        c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16
+        c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
         stop_time_str = stop_time.strftime("%Y-%m-%d %H:%M:%S")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
