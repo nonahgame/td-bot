@@ -2,7 +2,7 @@ flask==3.0.3
 gunicorn==23.0.0
 numpy==1.26.4
 pandas==2.2.2
-ccxt==4.3.0
+ccxt==4.3.10
 pandas_ta==0.3.14b0
 python-telegram-bot==13.7
 requests==2.32.3
