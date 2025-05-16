@@ -47,7 +47,7 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 def authenticate_google_drive():
     try:
-        if not os.path.exists('service_account.json'):
+        if not os.path.exists('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'):
             logger.warning("service_account.json not found. Skipping Google Drive authentication.")
             return None
         creds = Credentials.from_service_account_file('service_account.json', scopes=SCOPES)
