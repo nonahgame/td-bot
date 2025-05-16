@@ -1,5 +1,3 @@
-# Install dependencies the 1 use & testing working perfectly
-#"td-bot-99"
 import os
 import pandas as pd
 import numpy as np
@@ -13,9 +11,12 @@ import telegram
 import logging
 import threading
 import requests
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, render_template, jsonify
 import atexit
-import subprocess
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
+import io
 
 # Configure logging
 logging.basicConfig(
@@ -32,13 +33,90 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "BOT_TOKEN")  # Replace with your Telegram bot token "oo"
-CHAT_ID = os.getenv("CHAT_ID", "CHAT_ID")        # Replace with your Telegram chat ID "00"
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
-TIMEFRAME = os.getenv("TIMEFRAME", "5m")  # 1 minute
+TIMEFRAME = os.getenv("TIMEFRAME", "5m")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
-STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))  # 1 hour
+STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))
+GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "YOUR_FOLDER_ID")
+
+# Google Drive setup
+SCOPES = ['https://www.googleapis.com/auth/drive.file']
+
+def authenticate_google_drive():
+    try:
+        if not os.path.exists('service_account.json'):
+            logger.warning("service_account.json not found. Skipping Google Drive authentication.")
+            return None
+        creds = Credentials.from_service_account_file('service_account.json', scopes=SCOPES)
+        return build('drive', 'v3', credentials=creds)
+    except Exception as e:
+        logger.error(f"Error authenticating Google Drive: {e}")
+        return None
+
+def upload_to_google_drive(file_path, file_name, folder_id):
+    try:
+        drive_service = authenticate_google_drive()
+        if not drive_service:
+            logger.warning("Google Drive service not available. Skipping upload.")
+            return
+        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        response = drive_service.files().list(q=query, fields='files(id, name)').execute()
+        files = response.get('files', [])
+        
+        file_metadata = {
+            'name': file_name,
+            'parents': [folder_id] if folder_id else []
+        }
+        media = MediaFileUpload(file_path)
+        
+        if files:
+            file_id = files[0]['id']
+            file = drive_service.files().update(
+                fileId=file_id,
+                media_body=media,
+                fields='id'
+            ).execute()
+            logger.info(f"Updated {file_name} on Google Drive with ID: {file.get('id')}")
+        else:
+            file = drive_service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id'
+            ).execute()
+            logger.info(f"Uploaded {file_name} to Google Drive with ID: {file.get('id')}")
+    except Exception as e:
+        logger.error(f"Error uploading {file_name} to Google Drive: {e}")
+
+def download_from_google_drive(file_name, folder_id, destination_path):
+    try:
+        drive_service = authenticate_google_drive()
+        if not drive_service:
+            logger.warning("Google Drive service not available. Starting with a new database.")
+            return False
+        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
+        response = drive_service.files().list(q=query, fields='files(id, name)').execute()
+        files = response.get('files', [])
+        
+        if not files:
+            logger.info(f"No {file_name} found in Google Drive. Starting with a new database.")
+            return False
+        
+        file_id = files[0]['id']
+        request = drive_service.files().get_media(fileId=file_id)
+        fh = io.FileIO(destination_path, 'wb')
+        downloader = MediaIoBaseDownload(fh, request)
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            logger.debug(f"Download {file_name}: {int(status.progress() * 100)}%")
+        logger.info(f"Downloaded {file_name} from Google Drive to {destination_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Error downloading {file_name} from Google Drive: {e}")
+        return False
 
 # Global state
 bot_thread = None
@@ -51,7 +129,6 @@ buy_price = None
 total_profit = 0
 pause_duration = 0
 pause_start = None
-# md 1
 latest_signal = {
     'time': 'N/A',
     'action': 'N/A',
@@ -79,22 +156,16 @@ start_time = datetime.now()
 stop_time = start_time + pd.Timedelta(seconds=STOP_AFTER_SECONDS)
 last_valid_price = None
 
-# Keep-alive mechanism
-def keep_alive():
-    while True:
-        try:
-            requests.get('https://www.google.com')
-            logger.debug("Keep-alive ping sent")
-            time.sleep(300)
-        except Exception as e:
-            logger.error(f"Keep-alive error: {e}")
-            time.sleep(60)
-
 # SQLite database setup
 def setup_database():
     global conn
     db_path = 'at00_bot.db'
     try:
+        if download_from_google_drive('at00_bot.db', GOOGLE_DRIVE_FOLDER_ID, db_path):
+            logger.info(f"Restored database from Google Drive to {db_path}")
+        else:
+            logger.info(f"No existing database found. Creating new database at {db_path}")
+        
         conn = sqlite3.connect(db_path, check_same_thread=False)
         c = conn.cursor()
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trades';")
@@ -134,7 +205,13 @@ def setup_database():
         logger.info(f"Database initialized at {db_path}")
     except Exception as e:
         logger.error(f"Database setup error: {e}")
-        raise
+        conn = None
+
+# Initialize database immediately
+logger.info("Initializing database at startup")
+setup_database()
+if conn is None:
+    logger.error("Failed to initialize database. Flask routes may fail.")
 
 # Fetch price data with improved handling
 def get_simulated_price(symbol=SYMBOL, exchange=exchange, timeframe=TIMEFRAME, retries=3, delay=5):
@@ -280,7 +357,7 @@ def timeframe_to_seconds(timeframe):
             return value * 86400
         else:
             logger.error(f"Unsupported timeframe unit: {unit}")
-            return 60  # Default to 1 minute
+            return 60
     except Exception as e:
         logger.error(f"Error parsing timeframe {timeframe}: {e}")
         return 60
@@ -293,14 +370,16 @@ def align_to_next_boundary(interval_seconds):
     if seconds_to_next == interval_seconds:
         seconds_to_next = 0
     next_boundary = now + timedelta(seconds=seconds_to_next)
-    # Round down to the nearest second for clean alignment
     next_boundary = next_boundary.replace(microsecond=0)
     return seconds_to_next, next_boundary
 
 # Trading bot logic
 def trading_bot():
-    global bot_active, position, buy_price, total_profit, pause_duration, pause_start, latest_signal, conn, last_valid_price
-    setup_database()
+    global bot_active, position, buy_price, total_profit, pause_duration, pause_start, latest_signal, conn, last_valid_price, stop_time
+    if conn is None:
+        logger.error("Database connection not initialized. Cannot start trading bot.")
+        return
+
     delete_webhook()
     bot = Bot(token=BOT_TOKEN)
     last_update_id = 0
@@ -332,11 +411,9 @@ def trading_bot():
                 logger.error(f"Failed to fetch historical data for {SYMBOL}.")
                 return
 
-    # Calculate interval seconds from TIMEFRAME
     interval_seconds = timeframe_to_seconds(TIMEFRAME)
     logger.info(f"Using interval of {interval_seconds} seconds for timeframe {TIMEFRAME}")
 
-    # Align to next time boundary
     seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
     if seconds_to_next > 0:
         logger.info(f"Waiting {seconds_to_next:.2f} seconds to align with next boundary at {next_boundary.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -358,6 +435,7 @@ def trading_bot():
                         signal = create_signal("sell", latest_data['Close'], latest_data, df, profit, total_profit, "Bot stopped due to time limit")
                         store_signal(signal)
                         send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
+                        logger.info(f"Generated signal on stop: {signal['action']} at {signal['price']}")
                     position = None
                 logger.info("Bot stopped due to time limit")
                 break
@@ -379,10 +457,9 @@ def trading_bot():
                     position = None
                     logger.info("Bot resumed after pause")
 
-            # Ensure cycle starts at boundary
             now = datetime.now()
             seconds_since_epoch = now.timestamp()
-            if seconds_since_epoch % interval_seconds > 1:  # Allow 1-second tolerance
+            if seconds_since_epoch % interval_seconds > 1:
                 seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
                 logger.debug(f"Cycle misaligned, waiting {seconds_to_next:.2f} seconds for {next_boundary.strftime('%Y-%m-%d %H:%M:%S')}")
                 time.sleep(seconds_to_next)
@@ -402,7 +479,7 @@ def trading_bot():
                         text = update.message.text.strip()
                         command_chat_id = update.message.chat.id
                         if text == '/help':
-                            bot.send_message(chat_id=command_chat_id, text="Commands: /help, /stop, /stopN, /start, /status, /performance, /count, /stats")
+                            bot.send_message(chat_id=command_chat_id, text="Commands: /help, /stop, /stopN, /start, /status, /performance, /count, /stats, /daily")
                         elif text == '/stop':
                             with bot_lock:
                                 if bot_active and position == "long":
@@ -411,6 +488,7 @@ def trading_bot():
                                     signal = create_signal("sell", current_price, latest_data, df, profit, total_profit, "Bot stopped via Telegram")
                                     store_signal(signal)
                                     send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
+                                    logger.info(f"Generated signal on /stop: {signal['action']} at {signal['price']}")
                                     position = None
                                 bot_active = False
                             bot.send_message(chat_id=command_chat_id, text="Bot stopped.")
@@ -426,6 +504,7 @@ def trading_bot():
                                     signal = create_signal("sell", current_price, latest_data, df, profit, total_profit, "Bot paused via Telegram")
                                     store_signal(signal)
                                     send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
+                                    logger.info(f"Generated signal on /stopN: {signal['action']} at {signal['price']}")
                                     position = None
                                 bot_active = False
                             bot.send_message(chat_id=command_chat_id, text=f"Bot paused for {pause_duration/60} minutes.")
@@ -437,6 +516,16 @@ def trading_bot():
                                     pause_start = None
                                     pause_duration = 0
                                     bot.send_message(chat_id=command_chat_id, text="Bot started.")
+                        elif text == '/daily':
+                            with bot_lock:
+                                bot_active = True
+                                position = None
+                                buy_price = None
+                                pause_start = None
+                                pause_duration = 0
+                                start_time = datetime.now()
+                                stop_time = start_time + pd.Timedelta(seconds=STOP_AFTER_SECONDS)
+                                bot.send_message(chat_id=command_chat_id, text=f"Bot restarted with stop time: {stop_time.strftime('%Y-%m-%d %H:%M:%S')}")
                         elif text == '/status':
                             status = "active" if bot_active else f"paused for {int(pause_duration - (datetime.now() - pause_start).total_seconds())} seconds" if pause_start else "stopped"
                             bot.send_message(chat_id=command_chat_id, text=status)
@@ -489,13 +578,13 @@ def trading_bot():
                 store_signal(signal)
                 if bot_active and action != "hold":
                     threading.Thread(target=send_telegram_message, args=(signal, BOT_TOKEN, CHAT_ID), daemon=True).start()
+                    logger.info(f"Generated signal: {signal['action']} at {signal['price']}")
                 latest_signal = signal
 
             if (datetime.now() - last_stats_time).total_seconds() >= stats_interval:
                 logger.info("Periodic trade statistics would be displayed here. Run display_trade_statistics in a separate cell.")
                 last_stats_time = datetime.now()
 
-            # Sleep until the next boundary
             seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
             if seconds_to_next < 1:
                 seconds_to_next += interval_seconds
@@ -536,6 +625,9 @@ def create_signal(action, current_price, latest_data, df, profit, total_profit, 
 
 def store_signal(signal):
     try:
+        if conn is None:
+            logger.error("Cannot store signal: Database connection is None")
+            return
         c = conn.cursor()
         c.execute('''
             INSERT INTO trades (
@@ -554,11 +646,15 @@ def store_signal(signal):
         ))
         conn.commit()
         logger.debug("Signal stored successfully")
+        upload_to_google_drive('at00_bot.db', 'at00_bot.db', GOOGLE_DRIVE_FOLDER_ID)
     except Exception as e:
         logger.error(f"Error storing signal: {e}")
 
 def get_performance():
     try:
+        if conn is None:
+            logger.error("Cannot fetch performance: Database connection is None")
+            return "Database not initialized."
         c = conn.cursor()
         c.execute("SELECT COUNT(*) FROM trades")
         trade_count = c.fetchone()[0]
@@ -590,6 +686,9 @@ Total Profit: {total_profit_db:.2f}
 
 def get_trade_counts():
     try:
+        if conn is None:
+            logger.error("Cannot fetch trade counts: Database connection is None")
+            return "Database not initialized."
         c = conn.cursor()
         c.execute("SELECT DISTINCT timeframe FROM trades")
         timeframes = [row[0] for row in c.fetchall()]
@@ -626,6 +725,9 @@ def index():
     global latest_signal, stop_time
     status = "active" if bot_active else "stopped"
     try:
+        if conn is None:
+            logger.error("Cannot render index.html: Database connection is None")
+            return jsonify({"error": "Database not initialized. Please check server logs."}), 500
         logger.debug(f"Rendering index.html with latest_signal: {latest_signal}")
         c = conn.cursor()
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
@@ -651,6 +753,9 @@ def performance():
 @app.route('/trades')
 def trades():
     try:
+        if conn is None:
+            logger.error("Cannot fetch trades: Database connection is None")
+            return jsonify({"error": "Database not initialized."}), 500
         c = conn.cursor()
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
@@ -674,11 +779,6 @@ if bot_thread is None or not bot_thread.is_alive():
     bot_thread.start()
     logger.info("Trading bot started automatically")
 
-# Run Flask app in Colab
 if __name__ == "__main__":
-
-    logger.info("Starting keep-alive thread")
-    keep_alive_thread = threading.Thread(target=keep_alive, daemon=True)
-    keep_alive_thread.start()
-    
-    app.run(host = '0.0.0.0', debug = True)
+    port = int(os.getenv("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)
