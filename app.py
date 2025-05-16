@@ -17,6 +17,11 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
+import json
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -47,13 +52,24 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 
 def authenticate_google_drive():
     try:
-        if not os.path.exists('pf6i6sqqbc233thku0gkoj2dvqoqj437.apps.googleusercontent.com.json'):
-            logger.warning("service_account.json not found. Skipping Google Drive authentication.")
-            return None
-        creds = Credentials.from_service_account_file('service_account.json', scopes=SCOPES)
-        return build('drive', 'v3', credentials=creds)
+        service_account_info = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
+        if service_account_info:
+            creds = Credentials.from_service_account_info(json.loads(service_account_info), scopes=SCOPES)
+            logger.debug("Service account credentials loaded from environment variable")
+        else:
+            service_account_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "service_account.json")
+            logger.debug(f"Current working directory: {os.getcwd()}")
+            logger.debug(f"Checking for service account file at: {os.path.abspath(service_account_path)}")
+            if not os.path.exists(service_account_path):
+                logger.warning(f"{service_account_path} not found. Skipping Google Drive authentication.")
+                return None
+            creds = Credentials.from_service_account_file(service_account_path, scopes=SCOPES)
+            logger.debug("Service account credentials loaded from file")
+        service = build('drive', 'v3', credentials=creds)
+        logger.debug("Google Drive service initialized")
+        return service
     except Exception as e:
-        logger.error(f"Error authenticating Google Drive: {e}")
+        logger.error(f"Error authenticating Google Drive: {e}", exc_info=True)
         return None
 
 def upload_to_google_drive(file_path, file_name, folder_id):
@@ -62,6 +78,7 @@ def upload_to_google_drive(file_path, file_name, folder_id):
         if not drive_service:
             logger.warning("Google Drive service not available. Skipping upload.")
             return
+        logger.debug(f"Uploading {file_name} to folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
         files = response.get('files', [])
@@ -88,7 +105,7 @@ def upload_to_google_drive(file_path, file_name, folder_id):
             ).execute()
             logger.info(f"Uploaded {file_name} to Google Drive with ID: {file.get('id')}")
     except Exception as e:
-        logger.error(f"Error uploading {file_name} to Google Drive: {e}")
+        logger.error(f"Error uploading {file_name} to Google Drive: {e}", exc_info=True)
 
 def download_from_google_drive(file_name, folder_id, destination_path):
     try:
@@ -96,6 +113,7 @@ def download_from_google_drive(file_name, folder_id, destination_path):
         if not drive_service:
             logger.warning("Google Drive service not available. Starting with a new database.")
             return False
+        logger.debug(f"Downloading {file_name} from folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
         files = response.get('files', [])
@@ -115,7 +133,7 @@ def download_from_google_drive(file_name, folder_id, destination_path):
         logger.info(f"Downloaded {file_name} from Google Drive to {destination_path}")
         return True
     except Exception as e:
-        logger.error(f"Error downloading {file_name} from Google Drive: {e}")
+        logger.error(f"Error downloading {file_name} from Google Drive: {e}", exc_info=True)
         return False
 
 # Global state
@@ -646,7 +664,7 @@ def store_signal(signal):
         ))
         conn.commit()
         logger.debug("Signal stored successfully")
-        upload_to_google_drive('at00_bot.db', 'at00_bot.db', GOOGLE_DRIVE_FOLDER_ID)
+        upload_to_google_drive('renda_bot.db', 'renda_bot.db', GOOGLE_DRIVE_FOLDER_ID)
     except Exception as e:
         logger.error(f"Error storing signal: {e}")
 
@@ -730,7 +748,7 @@ def index():
             return jsonify({"error": "Database not initialized. Please check server logs."}), 500
         logger.debug(f"Rendering index.html with latest_signal: {latest_signal}")
         c = conn.cursor()
-        c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
+        c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16
         trades = [dict(zip([col[0] for col in c.description], row)) for row in c.fetchall()]
         stop_time_str = stop_time.strftime("%Y-%m-%d %H:%M:%S")
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
