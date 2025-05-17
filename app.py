@@ -46,7 +46,7 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
-TIMEFRAME = os.getenv("TIMEFRAME", "1m")
+TIMEFRAME = os.getenv("TIMEFRAME", "5m")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
 STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))
@@ -62,23 +62,12 @@ def authenticate_google_drive():
             logger.error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set.")
             return None
         try:
-            # Attempt to parse JSON
             creds_info = json.loads(service_account_info)
             logger.debug(f"Service account JSON keys: {list(creds_info.keys())}")
         except json.JSONDecodeError as e:
             logger.error(f"Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
             return None
-        except Exception as e:
-            logger.error(f"Unexpected error parsing GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
-            return None
-
-        try:
-            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-            logger.debug("Service account credentials loaded successfully")
-        except Exception as e:
-            logger.error(f"Error creating credentials from service account info: {e}", exc_info=True)
-            return None
-
+        creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
         service = build('drive', 'v3', credentials=creds)
         logger.debug("Google Drive service initialized")
         return service
@@ -86,19 +75,36 @@ def authenticate_google_drive():
         logger.error(f"Unexpected error in Google Drive authentication: {e}", exc_info=True)
         return None
 
-def validate_folder_id(drive_service, folder_id):
-    """Validate that the folder ID exists and is accessible."""
+def create_folder_if_not_exists(drive_service, folder_id, folder_name="RendaBotBackups"):
+    """Validate folder ID or create a new folder if it doesn't exist."""
     try:
-        # Check if the folder exists by retrieving its metadata
+        # Try to validate the folder ID
         folder = drive_service.files().get(fileId=folder_id, fields='id, name, mimeType').execute()
         if folder.get('mimeType') != 'application/vnd.google-apps.folder':
             logger.error(f"Provided folder ID {folder_id} is not a folder. MIME type: {folder.get('mimeType')}")
-            return False
+            return None
         logger.debug(f"Validated folder: {folder.get('name')} (ID: {folder_id})")
-        return True
+        return folder_id
     except Exception as e:
-        logger.error(f"Error validating folder ID {folder_id}: {e}", exc_info=True)
-        return False
+        if "File not found" in str(e):
+            logger.warning(f"Folder ID {folder_id} not found. Creating new folder: {folder_name}")
+            try:
+                # Create a new folder
+                file_metadata = {
+                    'name': folder_name,
+                    'mimeType': 'application/vnd.google-apps.folder'
+                }
+                folder = drive_service.files().create(body=file_metadata, fields='id, name').execute()
+                new_folder_id = folder.get('id')
+                logger.info(f"Created new folder: {folder.get('name')} (ID: {new_folder_id})")
+                logger.warning(f"Please update GOOGLE_DRIVE_FOLDER_ID in Render to: {new_folder_id}")
+                return new_folder_id
+            except Exception as create_e:
+                logger.error(f"Failed to create folder {folder_name}: {create_e}", exc_info=True)
+                return None
+        else:
+            logger.error(f"Error validating folder ID {folder_id}: {e}", exc_info=True)
+            return None
 
 def upload_to_google_drive(file_path, file_name, folder_id):
     try:
@@ -107,11 +113,12 @@ def upload_to_google_drive(file_path, file_name, folder_id):
             logger.warning("Google Drive service not available. Skipping upload.")
             return
 
-        # Validate folder ID
+        # Validate or create folder
         if not folder_id or folder_id == "YOUR_FOLDER_ID":
             logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
             return
-        if not validate_folder_id(drive_service, folder_id):
+        folder_id = create_folder_if_not_exists(drive_service, folder_id)
+        if not folder_id:
             logger.error(f"Skipping upload due to invalid or inaccessible folder ID: {folder_id}")
             return
 
@@ -151,11 +158,12 @@ def download_from_google_drive(file_name, folder_id, destination_path):
             logger.warning("Google Drive service not available. Starting with a new database.")
             return False
 
-        # Validate folder ID
+        # Validate or create folder
         if not folder_id or folder_id == "YOUR_FOLDER_ID":
             logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
             return False
-        if not validate_folder_id(drive_service, folder_id):
+        folder_id = create_folder_if_not_exists(drive_service, folder_id)
+        if not folder_id:
             logger.error(f"Skipping download due to invalid or inaccessible folder ID: {folder_id}")
             return False
 
