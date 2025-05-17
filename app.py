@@ -18,10 +18,16 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
 import json
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Try to import dotenv, with fallback if not installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger = logging.getLogger(__name__)
+    logger.debug("Loaded environment variables from .env file")
+except ImportError:
+    logger = logging.getLogger(__name__)
+    logger.warning("python-dotenv not installed. Relying on system environment variables.")
 
 # Configure logging
 logging.basicConfig(
@@ -32,7 +38,6 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
-logger = logging.getLogger(__name__)
 
 # Flask app setup
 app = Flask(__name__)
@@ -53,24 +58,47 @@ SCOPES = ['https://www.googleapis.com/auth/drive.file']
 def authenticate_google_drive():
     try:
         service_account_info = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if service_account_info:
-            creds = Credentials.from_service_account_info(json.loads(service_account_info), scopes=SCOPES)
-            logger.debug("Service account credentials loaded from environment variable")
-        else:
-            service_account_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_PATH", "service_account.json")
-            logger.debug(f"Current working directory: {os.getcwd()}")
-            logger.debug(f"Checking for service account file at: {os.path.abspath(service_account_path)}")
-            if not os.path.exists(service_account_path):
-                logger.warning(f"{service_account_path} not found. Skipping Google Drive authentication.")
-                return None
-            creds = Credentials.from_service_account_file(service_account_path, scopes=SCOPES)
-            logger.debug("Service account credentials loaded from file")
+        if not service_account_info:
+            logger.error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set.")
+            return None
+        try:
+            # Attempt to parse JSON
+            creds_info = json.loads(service_account_info)
+            logger.debug(f"Service account JSON keys: {list(creds_info.keys())}")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Unexpected error parsing GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+            return None
+
+        try:
+            creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
+            logger.debug("Service account credentials loaded successfully")
+        except Exception as e:
+            logger.error(f"Error creating credentials from service account info: {e}", exc_info=True)
+            return None
+
         service = build('drive', 'v3', credentials=creds)
         logger.debug("Google Drive service initialized")
         return service
     except Exception as e:
-        logger.error(f"Error authenticating Google Drive: {e}", exc_info=True)
+        logger.error(f"Unexpected error in Google Drive authentication: {e}", exc_info=True)
         return None
+
+def validate_folder_id(drive_service, folder_id):
+    """Validate that the folder ID exists and is accessible."""
+    try:
+        # Check if the folder exists by retrieving its metadata
+        folder = drive_service.files().get(fileId=folder_id, fields='id, name, mimeType').execute()
+        if folder.get('mimeType') != 'application/vnd.google-apps.folder':
+            logger.error(f"Provided folder ID {folder_id} is not a folder. MIME type: {folder.get('mimeType')}")
+            return False
+        logger.debug(f"Validated folder: {folder.get('name')} (ID: {folder_id})")
+        return True
+    except Exception as e:
+        logger.error(f"Error validating folder ID {folder_id}: {e}", exc_info=True)
+        return False
 
 def upload_to_google_drive(file_path, file_name, folder_id):
     try:
@@ -78,6 +106,15 @@ def upload_to_google_drive(file_path, file_name, folder_id):
         if not drive_service:
             logger.warning("Google Drive service not available. Skipping upload.")
             return
+
+        # Validate folder ID
+        if not folder_id or folder_id == "YOUR_FOLDER_ID":
+            logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
+            return
+        if not validate_folder_id(drive_service, folder_id):
+            logger.error(f"Skipping upload due to invalid or inaccessible folder ID: {folder_id}")
+            return
+
         logger.debug(f"Uploading {file_name} to folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
@@ -85,7 +122,7 @@ def upload_to_google_drive(file_path, file_name, folder_id):
         
         file_metadata = {
             'name': file_name,
-            'parents': [folder_id] if folder_id else []
+            'parents': [folder_id]
         }
         media = MediaFileUpload(file_path)
         
@@ -113,6 +150,15 @@ def download_from_google_drive(file_name, folder_id, destination_path):
         if not drive_service:
             logger.warning("Google Drive service not available. Starting with a new database.")
             return False
+
+        # Validate folder ID
+        if not folder_id or folder_id == "YOUR_FOLDER_ID":
+            logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
+            return False
+        if not validate_folder_id(drive_service, folder_id):
+            logger.error(f"Skipping download due to invalid or inaccessible folder ID: {folder_id}")
+            return False
+
         logger.debug(f"Downloading {file_name} from folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
@@ -230,6 +276,25 @@ logger.info("Initializing database at startup")
 setup_database()
 if conn is None:
     logger.error("Failed to initialize database. Flask routes may fail.")
+
+# Delete Telegram webhook with retries
+def delete_webhook(retries=3, delay=5):
+    try:
+        bot = Bot(token=BOT_TOKEN)
+        for attempt in range(retries):
+            try:
+                bot.delete_webhook()
+                logger.info("Telegram webhook deleted successfully")
+                return True
+            except telegram.error.TelegramError as e:
+                logger.error(f"Failed to delete webhook (attempt {attempt + 1}/{retries}): {e}")
+                if attempt < retries - 1:
+                    time.sleep(delay)
+        logger.error(f"Failed to delete webhook after {retries} attempts")
+        return False
+    except Exception as e:
+        logger.error(f"Error initializing bot for webhook deletion: {e}")
+        return False
 
 # Fetch price data with improved handling
 def get_simulated_price(symbol=SYMBOL, exchange=exchange, timeframe=TIMEFRAME, retries=3, delay=5):
@@ -353,15 +418,6 @@ KDJ J: {signal['j']:.2f}
                 time.sleep(delay)
     logger.error(f"Failed to send Telegram message after {retries} attempts")
 
-# Delete Telegram webhook
-def delete_webhook():
-    try:
-        bot = Bot(token=BOT_TOKEN)
-        bot.delete_webhook()
-        logger.info("Telegram webhook deleted successfully")
-    except Exception as e:
-        logger.error(f"Error deleting Telegram webhook: {e}")
-
 # Parse timeframe to seconds
 def timeframe_to_seconds(timeframe):
     try:
@@ -398,7 +454,11 @@ def trading_bot():
         logger.error("Database connection not initialized. Cannot start trading bot.")
         return
 
-    delete_webhook()
+    # Ensure webhook is deleted before starting polling
+    if not delete_webhook():
+        logger.error("Cannot proceed with polling due to persistent webhook. Exiting trading bot.")
+        return
+
     bot = Bot(token=BOT_TOKEN)
     last_update_id = 0
     df = None
@@ -554,8 +614,18 @@ def trading_bot():
                         elif text == '/stats':
                             bot.send_message(chat_id=command_chat_id, text="Trade statistics printed to console. Run display_trade_statistics in a separate cell.")
                     last_update_id = update.update_id + 1
-            except Exception as e:
+            except telegram.error.TelegramError as e:
                 logger.error(f"Error processing Telegram updates: {e}")
+                if "Conflict" in str(e):
+                    logger.warning("Webhook conflict detected. Attempting to delete webhook again.")
+                    if delete_webhook():
+                        logger.info("Webhook deleted successfully on retry.")
+                    else:
+                        logger.error("Failed to resolve webhook conflict. Skipping update cycle.")
+                        time.sleep(interval_seconds)
+                        continue
+            except Exception as e:
+                logger.error(f"Unexpected error processing Telegram updates: {e}")
 
             new_row = pd.DataFrame({
                 'Open': [latest_data['Open']],
