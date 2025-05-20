@@ -1,3 +1,4 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -28,11 +29,16 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(0, 0, 0, 0.7); /* Darker overlay for readability */
+            background-color: rgba(0, 0, 0, 0.7); /* Dark overlay for readability */
             z-index: 1;
         }
-        .signal h2, .signal p, .signal li {
-            color: white !important; /* Ensure text is white */
+        .signal h2 {
+            color: #0000ff !important; /* Ensure Latest Signal header is blue */
+            position: relative;
+            z-index: 2;
+        }
+        .signal li {
+            color: white !important; /* Ensure signal details are white */
             position: relative;
             z-index: 2;
         }
@@ -47,64 +53,65 @@
             border-collapse: collapse;
             margin-top: 10px;
         }
-        .trades th, .trades td {
+        .trades th {
             border: 1px solid #ddd;
             padding: 8px;
             text-align: left;
-        }
-        .trades th {
             background-color: #f2f2f2;
             color: #0000ff !important; /* Ensure table headers are blue */
         }
         .trades td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
             white-space: nowrap;
             color: white !important; /* Ensure table text is white */
+        }
+        .trades td.action-buy {
+            color: green !important; /* Buy actions in green */
+        }
+        .trades td.action-sell {
+            color: red !important; /* Sell actions in red */
+        }
+        .trades td.negative {
+            color: red !important; /* Negative values in red */
+        }
+        .trades td.non-negative {
+            color: green !important; /* Non-negative values in green */
         }
         .trades {
             overflow-x: auto;
         }
-        .action-buy {
-            color: green !important;
-        }
-        .action-sell {
-            color: red !important;
-        }
-        .negative {
-            color: red !important;
-        }
-        .non-negative {
-            color: green !important;
-        }
         .kdj-negative {
-            color: red;
+            color: red !important;
         }
         .kdj-overbought {
-            color: green;
+            color: green !important;
         }
         .kdj-neutral {
-            color: white;
+            color: white !important;
         }
         .rsi-oversold {
-            color: red;
+            color: red !important;
         }
         .rsi-overbought {
-            color: green;
+            color: green !important;
         }
         .rsi-neutral {
-            color: white;
+            color: white !important;
         }
         .diff-positive {
-            color: green;
+            color: green !important;
         }
         .diff-negative {
-            color: red;
+            color: red !important;
         }
         .error {
-            color: red;
+            color: red !important;
         }
         @media (max-width: 768px) {
             .trades table {
-                font-size: 14px;
+                font-size: 12px; /* Smaller font for mobile */
             }
         }
     </style>
@@ -165,12 +172,12 @@
                 <td class="{% if trade.action == 'buy' %}action-buy{% elif trade.action == 'sell' %}action-sell{% endif %}">{{ trade.action }}</td>
                 <td>{{ "%.2f"|format(trade.price) }}</td>
                 <td class="{% if trade.percent_change < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.percent_change) }}%</td>
-                <td class="{% if trade.profit is not none and trade.profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.profit) if trade.profit else "N/A" }}</td>
-                <td class="{% if trade.total_profit is not none and trade.total_profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.total_profit) if trade.total_profit else "N/A" }}</td>
+                <td class="{% if trade.profit is not none and trade.profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.profit) if trade.profit is not none else "N/A" }}</td>
+                <td class="{% if trade.total_profit is not none and trade.total_profit < 0 %}negative{% else %}non-negative{% endif %}">{{ "%.2f"|format(trade.total_profit) if trade.total_profit is not none else "N/A" }}</td>
                 <td>
                     KDJ J: <span class="{% if trade.j < 0 %}kdj-negative{% elif trade.j > 65 %}kdj-overbought{% else %}kdj-neutral{% endif %}">{{ "%.2f"|format(trade.j) }}</span>,
                     RSI: <span class="{% if trade.rsi < 15 %}rsi-oversold{% elif trade.rsi > 60 %}rsi-overbought{% else %}rsi-neutral{% endif %}">{{ "%.2f"|format(trade.rsi) }}</span>,
-                    Diff: <span class="{% if trade.diff > -0.00 %}diff-positive{% else %}diff-negative{% endif %}">{{ "%.2f"|format(trade.diff) }}</span>,
+                    Diff: <span class="{% if trade.diff > 0 %}diff-positive{% else %}diff-negative{% endif %}">{{ "%.2f"|format(trade.diff) }}</span>,
                     {{ trade.message }}
                 </td>
             </tr>
