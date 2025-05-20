@@ -46,7 +46,7 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
-TIMEFRAME = os.getenv("TIMEFRAME", "TIMEFRAME")  # Default to 1-minute for testing
+TIMEFRAME = os.getenv("TIMEFRAME", "1m")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
 STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))
@@ -270,6 +270,25 @@ logger.info("Initializing database at startup")
 setup_database()
 if conn is None:
     logger.error("Failed to initialize database. Flask routes may fail.")
+
+# Fetch latest signal from database
+def get_latest_signal_from_db():
+    try:
+        if conn is None:
+            logger.error("Cannot fetch latest signal: Database connection is None")
+            return None
+        c = conn.cursor()
+        c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 1")
+        row = c.fetchone()
+        if row:
+            columns = [col[0] for col in c.description]
+            signal = dict(zip(columns, row))
+            logger.debug(f"Fetched latest signal from DB: {signal}")
+            return signal
+        return None
+    except Exception as e:
+        logger.error(f"Error fetching latest signal from DB: {e}")
+        return None
 
 # Delete Telegram webhook with retries
 def delete_webhook(retries=3, delay=5):
@@ -495,8 +514,8 @@ def trading_bot():
     last_stats_time = datetime.now()
 
     while True:
-        with bot_lock:
-            if datetime.now() >= stop_time:
+        if datetime.now() >= stop_time:
+            with bot_lock:
                 bot_active = False
                 if position == "long":
                     latest_data = get_simulated_price()
@@ -507,13 +526,14 @@ def trading_bot():
                         store_signal(signal)
                         send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
                         logger.info(f"Generated signal on stop: {signal['action']} at {signal['price']}")
+                        latest_signal = signal
                     position = None
                 logger.info("Bot stopped due to time limit")
-                break
+            break
 
-            if not bot_active:
-                time.sleep(10)
-                continue
+        if not bot_active:
+            time.sleep(10)
+            continue
 
         try:
             if pause_start and pause_duration > 0:
@@ -560,6 +580,7 @@ def trading_bot():
                                     store_signal(signal)
                                     send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
                                     logger.info(f"Generated signal on /stop: {signal['action']} at {signal['price']}")
+                                    latest_signal = signal
                                     position = None
                                 bot_active = False
                             bot.send_message(chat_id=command_chat_id, text="Bot stopped.")
@@ -576,6 +597,7 @@ def trading_bot():
                                     store_signal(signal)
                                     send_telegram_message(signal, BOT_TOKEN, CHAT_ID)
                                     logger.info(f"Generated signal on /stopN: {signal['action']} at {signal['price']}")
+                                    latest_signal = signal
                                     position = None
                                 bot_active = False
                             bot.send_message(chat_id=command_chat_id, text=f"Bot paused for {pause_duration/60} minutes.")
@@ -635,10 +657,10 @@ def trading_bot():
             percent_change = ((current_price - prev_close) / prev_close * 100) if prev_close != 0 else 0.0
             recommended_action, stop_loss, take_profit = ai_decision(df, position=position, buy_price=buy_price)
 
+            action = "hold"
+            profit = 0
+            msg = f"HOLD {SYMBOL} at {current_price:.2f}"
             with bot_lock:
-                action = "hold"
-                profit = 0
-                msg = f"HOLD {SYMBOL} at {current_price:.2f}"
                 if bot_active and recommended_action == "buy" and position is None:
                     position = "long"
                     buy_price = current_price
@@ -655,13 +677,13 @@ def trading_bot():
                     elif take_profit and current_price >= take_profit:
                         msg += " (Take-Profit)"
 
-                signal = create_signal(action, current_price, latest_data, df, profit, total_profit, msg)
-                store_signal(signal)
-                latest_signal = signal  # Update latest_signal on every cycle
-                logger.debug(f"Updated latest_signal: {signal}")
-                if bot_active and action != "hold":
-                    threading.Thread(target=send_telegram_message, args=(signal, BOT_TOKEN, CHAT_ID), daemon=True).start()
-                    logger.info(f"Generated signal: {signal['action']} at {signal['price']}")
+            signal = create_signal(action, current_price, latest_data, df, profit, total_profit, msg)
+            store_signal(signal)
+            latest_signal = signal
+            logger.debug(f"Updated latest_signal: {signal}")
+            if bot_active and action != "hold":
+                threading.Thread(target=send_telegram_message, args=(signal, BOT_TOKEN, CHAT_ID), daemon=True).start()
+                logger.info(f"Generated signal: {signal['action']} at {signal['price']}")
 
             if (datetime.now() - last_stats_time).total_seconds() >= stats_interval:
                 logger.info("Periodic trade statistics would be displayed here. Run display_trade_statistics in a separate cell.")
@@ -809,6 +831,13 @@ def index():
         if conn is None:
             logger.error("Cannot render index.html: Database connection is None")
             return jsonify({"error": "Database not initialized. Please check server logs."}), 500
+        # Check if latest_signal is stale (older than 65 seconds)
+        signal_time = datetime.strptime(latest_signal['time'], "%Y-%m-%d %H:%M:%S")
+        if (datetime.now() - signal_time).total_seconds() > 65:
+            logger.debug("latest_signal is stale, fetching from database")
+            db_signal = get_latest_signal_from_db()
+            if db_signal:
+                latest_signal.update(db_signal)
         logger.debug(f"Rendering index.html with latest_signal: {latest_signal}")
         c = conn.cursor()
         c.execute("SELECT * FROM trades ORDER BY time DESC LIMIT 16")
