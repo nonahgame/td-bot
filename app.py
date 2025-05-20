@@ -1,3 +1,4 @@
+# app.py
 import os
 import pandas as pd
 import numpy as np
@@ -19,16 +20,6 @@ from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
 import io
 import json
 
-# Try to import dotenv, with fallback if not installed
-try:
-    from dotenv import load_dotenv
-    load_dotenv()
-    logger = logging.getLogger(__name__)
-    logger.debug("Loaded environment variables from .env file")
-except ImportError:
-    logger = logging.getLogger(__name__)
-    logger.warning("python-dotenv not installed. Relying on system environment variables.")
-
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -38,6 +29,15 @@ logging.basicConfig(
         logging.StreamHandler()
     ]
 )
+logger = logging.getLogger(__name__)
+
+# Try to import dotenv, with fallback if not installed
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+    logger.debug("Loaded environment variables from .env file")
+except ImportError:
+    logger.warning("python-dotenv not installed. Relying on system environment variables.")
 
 # Flask app setup
 app = Flask(__name__)
@@ -46,7 +46,7 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
-TIMEFRAME = os.getenv("TIMEFRAME", "TIMEFRAME")
+TIMEFRAME = os.getenv("TIMEFRAME", "1m")  # Default to 1-minute for testing
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
 STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))
@@ -76,9 +76,7 @@ def authenticate_google_drive():
         return None
 
 def create_folder_if_not_exists(drive_service, folder_id, folder_name="RendaBotBackups"):
-    """Validate folder ID or create a new folder if it doesn't exist."""
     try:
-        # Try to validate the folder ID
         folder = drive_service.files().get(fileId=folder_id, fields='id, name, mimeType').execute()
         if folder.get('mimeType') != 'application/vnd.google-apps.folder':
             logger.error(f"Provided folder ID {folder_id} is not a folder. MIME type: {folder.get('mimeType')}")
@@ -89,7 +87,6 @@ def create_folder_if_not_exists(drive_service, folder_id, folder_name="RendaBotB
         if "File not found" in str(e):
             logger.warning(f"Folder ID {folder_id} not found. Creating new folder: {folder_name}")
             try:
-                # Create a new folder
                 file_metadata = {
                     'name': folder_name,
                     'mimeType': 'application/vnd.google-apps.folder'
@@ -112,8 +109,6 @@ def upload_to_google_drive(file_path, file_name, folder_id):
         if not drive_service:
             logger.warning("Google Drive service not available. Skipping upload.")
             return
-
-        # Validate or create folder
         if not folder_id or folder_id == "YOUR_FOLDER_ID":
             logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
             return
@@ -121,18 +116,15 @@ def upload_to_google_drive(file_path, file_name, folder_id):
         if not folder_id:
             logger.error(f"Skipping upload due to invalid or inaccessible folder ID: {folder_id}")
             return
-
         logger.debug(f"Uploading {file_name} to folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
         files = response.get('files', [])
-        
         file_metadata = {
             'name': file_name,
             'parents': [folder_id]
         }
         media = MediaFileUpload(file_path)
-        
         if files:
             file_id = files[0]['id']
             file = drive_service.files().update(
@@ -157,8 +149,6 @@ def download_from_google_drive(file_name, folder_id, destination_path):
         if not drive_service:
             logger.warning("Google Drive service not available. Starting with a new database.")
             return False
-
-        # Validate or create folder
         if not folder_id or folder_id == "YOUR_FOLDER_ID":
             logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
             return False
@@ -166,16 +156,13 @@ def download_from_google_drive(file_name, folder_id, destination_path):
         if not folder_id:
             logger.error(f"Skipping download due to invalid or inaccessible folder ID: {folder_id}")
             return False
-
         logger.debug(f"Downloading {file_name} from folder ID: {folder_id}")
         query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
         response = drive_service.files().list(q=query, fields='files(id, name)').execute()
         files = response.get('files', [])
-        
         if not files:
             logger.info(f"No {file_name} found in Google Drive. Starting with a new database.")
             return False
-        
         file_id = files[0]['id']
         request = drive_service.files().get_media(fileId=file_id)
         fh = io.FileIO(destination_path, 'wb')
@@ -202,8 +189,8 @@ total_profit = 0
 pause_duration = 0
 pause_start = None
 latest_signal = {
-    'time': 'N/A',
-    'action': 'N/A',
+    'time': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    'action': 'hold',
     'symbol': SYMBOL,
     'price': 0.0,
     'open_price': 0.0,
@@ -221,7 +208,7 @@ latest_signal = {
     'k': 0.0,
     'd': 0.0,
     'j': 0.0,
-    'message': 'No signal yet',
+    'message': 'Initializing...',
     'timeframe': TIMEFRAME
 }
 start_time = datetime.now()
@@ -237,7 +224,6 @@ def setup_database():
             logger.info(f"Restored database from Google Drive to {db_path}")
         else:
             logger.info(f"No existing database found. Creating new database at {db_path}")
-        
         conn = sqlite3.connect(db_path, check_same_thread=False)
         c = conn.cursor()
         c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='trades';")
@@ -462,7 +448,6 @@ def trading_bot():
         logger.error("Database connection not initialized. Cannot start trading bot.")
         return
 
-    # Ensure webhook is deleted before starting polling
     if not delete_webhook():
         logger.error("Cannot proceed with polling due to persistent webhook. Exiting trading bot.")
         return
@@ -497,7 +482,7 @@ def trading_bot():
                 logger.error(f"Failed to fetch historical data for {SYMBOL}.")
                 return
 
-    interval_seconds = timeframe_to_seconds(TIMEFRAME)
+    interval_seconds = 60  # Force 1-minute updates
     logger.info(f"Using interval of {interval_seconds} seconds for timeframe {TIMEFRAME}")
 
     seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
@@ -672,10 +657,11 @@ def trading_bot():
 
                 signal = create_signal(action, current_price, latest_data, df, profit, total_profit, msg)
                 store_signal(signal)
+                latest_signal = signal  # Update latest_signal on every cycle
+                logger.debug(f"Updated latest_signal: {signal}")
                 if bot_active and action != "hold":
                     threading.Thread(target=send_telegram_message, args=(signal, BOT_TOKEN, CHAT_ID), daemon=True).start()
                     logger.info(f"Generated signal: {signal['action']} at {signal['price']}")
-                latest_signal = signal
 
             if (datetime.now() - last_stats_time).total_seconds() >= stats_interval:
                 logger.info("Periodic trade statistics would be displayed here. Run display_trade_statistics in a separate cell.")
@@ -707,16 +693,16 @@ def create_signal(action, current_price, latest_data, df, profit, total_profit, 
         'stop_loss': None,
         'take_profit': None,
         'profit': profit,
-        'timeframe': TIMEFRAME,
         'total_profit': total_profit,
-        'ema1': latest['ema1'],
-        'ema2': latest['ema2'],
-        'rsi': latest['rsi'],
-        'k': latest['k'],
-        'd': latest['d'],
-        'j': latest['j'],
-        'diff': latest['diff'],
-        'message': msg
+        'ema1': latest['ema1'] if not pd.isna(latest['ema1']) else 0.0,
+        'ema2': latest['ema2'] if not pd.isna(latest['ema2']) else 0.0,
+        'rsi': latest['rsi'] if not pd.isna(latest['rsi']) else 0.0,
+        'k': latest['k'] if not pd.isna(latest['k']) else 0.0,
+        'd': latest['d'] if not pd.isna(latest['d']) else 0.0,
+        'j': latest['j'] if not pd.isna(latest['j']) else 0.0,
+        'diff': latest['diff'] if not pd.isna(latest['diff']) else 0.0,
+        'message': msg,
+        'timeframe': TIMEFRAME
     }
 
 def store_signal(signal):
@@ -756,7 +742,6 @@ def get_performance():
         trade_count = c.fetchone()[0]
         if trade_count == 0:
             return "No trades available for performance analysis."
-
         c.execute("SELECT DISTINCT timeframe FROM trades")
         timeframes = [row[0] for row in c.fetchall()]
         message = "Performance Statistics by Timeframe:\n"
