@@ -1,3 +1,4 @@
+<!-- templates/index.html -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -9,7 +10,7 @@
             background-color: #d3d3d3;
         }
         h1, h2 {
-            color: #0000ff;
+            color: #0000ff !important; /* Ensure headers are blue */
         }
         .signal {
             border: 1px solid #ccc;
@@ -28,11 +29,11 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background-color: rgba(0, 0, 0, 0.5);
+            background-color: rgba(0, 0, 0, 0.7); /* Darker overlay for readability */
             z-index: 1;
         }
-        .signal h2, .signal p {
-            color: white;
+        .signal h2, .signal p, .signal li {
+            color: white !important; /* Ensure text is white */
             position: relative;
             z-index: 2;
         }
@@ -54,11 +55,11 @@
         }
         .trades th {
             background-color: #f2f2f2;
-            color: #0000ff;
+            color: #0000ff !important; /* Ensure table headers are blue */
         }
         .trades td {
             white-space: nowrap;
-            color: white;
+            color: white !important; /* Ensure table text is white */
         }
         .trades {
             overflow-x: auto;
@@ -110,47 +111,42 @@
     </style>
 </head>
 <body>
-    <h1>Marvellous-Bn Trade-Net</h1>   {% include 'queen1.html'%}
+    <h1>Marvellous-Bn Trade-Net</h1>
     <p>Status: {{ status }}</p>
     <p>Timeframe: {{ timeframe }}</p>
-    <p>Stop Time: {{ stop_time }}</p>   {% include 'queen.html'%}
-    {% if signal %}
-    {% endif %}
+    <p>Stop Time: {{ stop_time }}</p>
     <div class="signal">
         <h2>Latest Signal</h2>
-        <p>{% if signal and signal.message != 'No signal yet' %}
-        <li>Time: {{ signal.time }}</li>
-        <li>Timeframe: {{ signal.timeframe }}</li>
-        <li>Message: {{ signal.message }}</li>
-        <li>Price: {{ "%.2f"|format(signal.price) }}</li>
-        <li>Open: {{ "%.2f"|format(signal.open_price) }}</li>
-        <li>Close: {{ "%.2f"|format(signal.close_price) }}</li>
-        <li>Volume: {{ "%.2f"|format(signal.volume) }}</li>
-        <li>% Change: {{ "%.2f"|format(signal.percent_change) }}%</li>
-        <li>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</li>
-        <li>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</li>
-        <li>RSI (14): {{ "%.2f"|format(signal.rsi) }}</li>
-        <li>Diff: {{ "%.2f"|format(signal.diff) }}</li>
-        <li>KDJ K: {{ "%.2f"|format(signal.k) }}</li>
-        <li>KDJ D: {{ "%.2f"|format(signal.d) }}</li>
-        <li>KDJ J: {{ "%.2f"|format(signal.j) }}</li>
-        {% if signal.stop_loss %}
-        <li>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</li>
-        {% endif %}
-        {% if signal.take_profit %}
-        <li>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</li>
-        {% endif %}
-        {% if signal.action in ["buy", "sell"] %}
-        <li>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</li>
-        {% endif %}
-        {% if signal.action == "sell" %}
-        <li>Profit: {{ "%.2f"|format(signal.profit) }}</li>
-        {% endif %}
-        {% endif %}</p>
+        <ul>
+            <li>Time: {{ signal.time }}</li>
+            <li>Timeframe: {{ signal.timeframe }}</li>
+            <li>Message: {{ signal.message }}</li>
+            <li>Price: {{ "%.2f"|format(signal.price) }}</li>
+            <li>Open: {{ "%.2f"|format(signal.open_price) }}</li>
+            <li>Close: {{ "%.2f"|format(signal.close_price) }}</li>
+            <li>Volume: {{ "%.2f"|format(signal.volume) }}</li>
+            <li>% Change: {{ "%.2f"|format(signal.percent_change) }}%</li>
+            <li>EMA1 (12): {{ "%.2f"|format(signal.ema1) }}</li>
+            <li>EMA2 (26): {{ "%.2f"|format(signal.ema2) }}</li>
+            <li>RSI (14): {{ "%.2f"|format(signal.rsi) }}</li>
+            <li>Diff: {{ "%.2f"|format(signal.diff) }}</li>
+            <li>KDJ K: {{ "%.2f"|format(signal.k) }}</li>
+            <li>KDJ D: {{ "%.2f"|format(signal.d) }}</li>
+            <li>KDJ J: {{ "%.2f"|format(signal.j) }}</li>
+            {% if signal.stop_loss %}
+            <li>Stop-Loss: {{ "%.2f"|format(signal.stop_loss) }}</li>
+            {% endif %}
+            {% if signal.take_profit %}
+            <li>Take-Profit: {{ "%.2f"|format(signal.take_profit) }}</li>
+            {% endif %}
+            {% if signal.action in ["buy", "sell"] %}
+            <li>Total Profit: {{ "%.2f"|format(signal.total_profit) }}</li>
+            {% endif %}
+            {% if signal.action == "sell" %}
+            <li>Profit: {{ "%.2f"|format(signal.profit) }}</li>
+            {% endif %}
+        </ul>
     </div>
-    {% if signal %}
-    {% endif %}
-    
     <div class="trades">
         <h2>Recent Trades</h2>
         {% if trades %}
@@ -186,7 +182,7 @@
         {% endif %}
     </div>
     <script>
-        setTimeout(() => location.reload(), 30000);
+        setTimeout(() => location.reload(), 60000); // Refresh every 60 seconds
     </script>
 </body>
 </html>
