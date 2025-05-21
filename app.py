@@ -50,6 +50,7 @@ TIMEFRAME = os.getenv("TIMEFRAME", "TIMEFRAME")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
 STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 43200))
+INTER_SECONDS = int(os.getenv("INTER_SECONDS", INTER_SECONS))
 GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "YOUR_FOLDER_ID")
 
 # Google Drive setup
@@ -501,7 +502,7 @@ def trading_bot():
                 logger.error(f"Failed to fetch historical data for {SYMBOL}.")
                 return
 
-    interval_seconds = os.getenv(inter_seconds) # 60  Force 1-minute updates
+    interval_seconds = INTER_SECONDS # os.getenv(inter_seconds) 60  Force 1-minute updates
     logger.info(f"Using interval of {interval_seconds} seconds for timeframe {TIMEFRAME}")
 
     seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
