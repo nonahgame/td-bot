@@ -1,4 +1,5 @@
 # app.py
+# simple timeframe_seconds = {'1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400}.get(TIMEFRAME, 300
 import os
 import pandas as pd
 import numpy as np
