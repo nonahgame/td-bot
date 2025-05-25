@@ -366,6 +366,12 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
     latest = df.iloc[-1]
     close_price = latest['Close']
     open_price = latest['Open']
+    ema1 = latest['ema1'] if not pd.isna(latest['ema1']) else 0.0
+    ema2 = latest['ema2'] if not pd.isna(latest['ema2']) else 0.0
+    rsi = latest['rsi'] if not pd.isna(latest['rsi']) else 0.0
+    kdj_k = latest['k'] if not pd.isna(latest['k']) else 0.0
+    kdj_d = latest['d'] if not pd.isna(latest['d']) else 0.0
+    kdj_j = latest['j'] if not pd.isna(latest['j']) else 0.0
     stop_loss = None
     take_profit = None
     action = "hold"
@@ -379,13 +385,19 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
         elif close_price >= take_profit:
             logger.info("Take-profit triggered.")
             action = "sell"
-        elif close_price < open_price:
-            logger.info("Sell signal detected (Close < Open).")
+        elif (open_price > close_price and kdj_j > 20.00) or \
+             (open_price > close_price and rsi > 18.00) or \
+             (rsi > 96.00):
+            logger.info(f"Sell signal detected: open={open_price:.2f}, close={close_price:.2f}, kdj_j={kdj_j:.2f}, rsi={rsi:.2f}")
             action = "sell"
 
-    if action == "hold" and position is None and close_price > open_price:
-        logger.info("Buy signal detected (Close > Open).")
-        action = "buy"
+    if action == "hold" and position is None:
+        if (close_price > open_price and ema1 > ema2 and kdj_j < 80.00) or \
+           (close_price > open_price and kdj_j > kdj_d and kdj_j < 80.00) or \
+           (rsi < 9.00) or \
+           (kdj_j < -17.00):
+            logger.info(f"Buy signal detected: close={close_price:.2f}, open={open_price:.2f}, ema1={ema1:.2f}, ema2={ema2:.2f}, kdj_j={kdj_j:.2f}, rsi={rsi:.2f}")
+            action = "buy"
 
     if action == "buy" and position is not None:
         logger.debug("Prevented consecutive buy order.")
