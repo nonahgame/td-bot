@@ -395,7 +395,7 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
         if (close_price > open_price and ema1 > ema2 and kdj_j < 119.00) or \
            (close_price > open_price and kdj_j > kdj_d and kdj_j < 118.00) or \
            (rsi < 9.00) or \
-           (kdj_j < -17.00):
+           (kdj_j < -24.00):
             logger.info(f"Buy signal detected: close={close_price:.2f}, open={open_price:.2f}, ema1={ema1:.2f}, ema2={ema2:.2f}, kdj_j={kdj_j:.2f}, rsi={rsi:.2f}")
             action = "buy"
 
