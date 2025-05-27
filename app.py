@@ -15,10 +15,7 @@ import threading
 import requests
 from flask import Flask, render_template, jsonify
 import atexit
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
-import io
+import base64
 import json
 
 # Configure logging
@@ -44,139 +41,101 @@ except ImportError:
 app = Flask(__name__)
 
 # Environment variables
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
-CHAT_ID = os.getenv("CHAT_ID", "YOUR_CHAT_ID_HERE")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "BOT_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID", "CHAT_ID")
 SYMBOL = os.getenv("SYMBOL", "BTC/USD")
 TIMEFRAME = os.getenv("TIMEFRAME", "TIMEFRAME")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
 STOP_AFTER_SECONDS = float(os.getenv("STOP_AFTER_SECONDS", 61200))
-INTER_SECONDS = int(os.getenv("INTER_SECONDS", "INTER_SECONS"))
-GOOGLE_DRIVE_FOLDER_ID = os.getenv("GOOGLE_DRIVE_FOLDER_ID", "YOUR_FOLDER_ID")
+INTER_SECONDS = int(os.getenv("INTER_SECONDS", "INTER_SECONDS"))  # Default to 60 if invalid
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "GITHUB_TOKEN")
+GITHUB_REPO = os.getenv("GITHUB_REPO", "GITHUB_REPO")
+GITHUB_PATH = os.getenv("GITHUB_PATH", "GITHUB_PATH")  # database
 
-# Google Drive setup
-SCOPES = ['https://www.googleapis.com/auth/drive.file']
+# GitHub API setup
+GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/contents/{GITHUB_PATH}"  # GITHUB_REPO
+HEADERS = {
+    "Authorization": f"token {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github.v3+json"
+}
 
-def authenticate_google_drive():
+def upload_to_github(file_path, file_name):
     try:
-        service_account_info = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if not service_account_info:
-            logger.error("GOOGLE_SERVICE_ACCOUNT_JSON environment variable is not set.")
-            return None
-        try:
-            creds_info = json.loads(service_account_info)
-            logger.debug(f"Service account JSON keys: {list(creds_info.keys())}")
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
-            return None
-        creds = Credentials.from_service_account_info(creds_info, scopes=SCOPES)
-        service = build('drive', 'v3', credentials=creds)
-        logger.debug("Google Drive service initialized")
-        return service
-    except Exception as e:
-        logger.error(f"Unexpected error in Google Drive authentication: {e}", exc_info=True)
-        return None
+        if not GITHUB_TOKEN or GITHUB_TOKEN == "GITHUB_TOKEN":  # Your-GITHUB_TOKEN
+            logger.error("GITHUB_TOKEN is not set or invalid.")
+            return
+        if not GITHUB_REPO or GITHUB_REPO == "GITHUB_REPO":  # your-username/your-repo
+            logger.error("GITHUB_REPO is not set or invalid.")
+            return
+        if not GITHUB_PATH:
+            logger.error("GITHUB_PATH is not set.")
+            return
 
-def create_folder_if_not_exists(drive_service, folder_id, folder_name="RendaBotBackups"):
-    try:
-        folder = drive_service.files().get(fileId=folder_id, fields='id, name, mimeType').execute()
-        if folder.get('mimeType') != 'application/vnd.google-apps.folder':
-            logger.error(f"Provided folder ID {folder_id} is not a folder. MIME type: {folder.get('mimeType')}")
-            return None
-        logger.debug(f"Validated folder: {folder.get('name')} (ID: {folder_id})")
-        return folder_id
-    except Exception as e:
-        if "File not found" in str(e):
-            logger.warning(f"Folder ID {folder_id} not found. Creating new folder: {folder_name}")
-            try:
-                file_metadata = {
-                    'name': folder_name,
-                    'mimeType': 'application/vnd.google-apps.folder'
-                }
-                folder = drive_service.files().create(body=file_metadata, fields='id, name').execute()
-                new_folder_id = folder.get('id')
-                logger.info(f"Created new folder: {folder.get('name')} (ID: {new_folder_id})")
-                logger.warning(f"Please update GOOGLE_DRIVE_FOLDER_ID in Render to: {new_folder_id}")
-                return new_folder_id
-            except Exception as create_e:
-                logger.error(f"Failed to create folder {folder_name}: {create_e}", exc_info=True)
-                return None
-        else:
-            logger.error(f"Error validating folder ID {folder_id}: {e}", exc_info=True)
-            return None
+        logger.debug(f"Uploading {file_name} to GitHub: {GITHUB_REPO}/{GITHUB_PATH}")
 
-def upload_to_google_drive(file_path, file_name, folder_id):
-    try:
-        drive_service = authenticate_google_drive()
-        if not drive_service:
-            logger.warning("Google Drive service not available. Skipping upload.")
+        # Read the file and encode it to base64
+        with open(file_path, "rb") as f:
+            content = base64.b64encode(f.read()).decode("utf-8")
+
+        # Check if the file already exists to get its SHA
+        response = requests.get(GITHUB_API_URL, headers=HEADERS)
+        sha = None
+        if response.status_code == 200:
+            sha = response.json().get("sha")
+            logger.debug(f"Existing file SHA: {sha}")
+        elif response.status_code != 404:
+            logger.error(f"Failed to check existing file on GitHub: {response.status_code} - {response.text}")
             return
-        if not folder_id or folder_id == "YOUR_FOLDER_ID":
-            logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
-            return
-        folder_id = create_folder_if_not_exists(drive_service, folder_id)
-        if not folder_id:
-            logger.error(f"Skipping upload due to invalid or inaccessible folder ID: {folder_id}")
-            return
-        logger.debug(f"Uploading {file_name} to folder ID: {folder_id}")
-        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
-        response = drive_service.files().list(q=query, fields='files(id, name)').execute()
-        files = response.get('files', [])
-        file_metadata = {
-            'name': file_name,
-            'parents': [folder_id]
+
+        # Prepare the payload
+        payload = {
+            "message": f"Update {file_name} at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            "content": content
         }
-        media = MediaFileUpload(file_path)
-        if files:
-            file_id = files[0]['id']
-            file = drive_service.files().update(
-                fileId=file_id,
-                media_body=media,
-                fields='id'
-            ).execute()
-            logger.info(f"Updated {file_name} on Google Drive with ID: {file.get('id')}")
-        else:
-            file = drive_service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id'
-            ).execute()
-            logger.info(f"Uploaded {file_name} to Google Drive with ID: {file.get('id')}")
-    except Exception as e:
-        logger.error(f"Error uploading {file_name} to Google Drive: {e}", exc_info=True)
+        if sha:
+            payload["sha"] = sha
 
-def download_from_google_drive(file_name, folder_id, destination_path):
+        # Upload the file
+        response = requests.put(GITHUB_API_URL, headers=HEADERS, json=payload)
+        if response.status_code in [200, 201]:
+            logger.info(f"Successfully uploaded {file_name} to GitHub")
+        else:
+            logger.error(f"Failed to upload {file_name} to GitHub: {response.status_code} - {response.text}")
+    except Exception as e:
+        logger.error(f"Error uploading {file_name} to GitHub: {e}", exc_info=True)
+
+def download_from_github(file_name, destination_path):
     try:
-        drive_service = authenticate_google_drive()
-        if not drive_service:
-            logger.warning("Google Drive service not available. Starting with a new database.")
+        if not GITHUB_TOKEN or GITHUB_TOKEN == "GITHUB_TOKEN":   #  YOUR_GITHUB_TOKEN_HERE
+            logger.error("GITHUB_TOKEN is not set or invalid.")
             return False
-        if not folder_id or folder_id == "YOUR_FOLDER_ID":
-            logger.error("GOOGLE_DRIVE_FOLDER_ID is not set or invalid.")
+        if not GITHUB_REPO or GITHUB_REPO == "GITHUB_REPO":   # your-username/your-repo
+            logger.error("GITHUB_REPO is not set or invalid.")
             return False
-        folder_id = create_folder_if_not_exists(drive_service, folder_id)
-        if not folder_id:
-            logger.error(f"Skipping download due to invalid or inaccessible folder ID: {folder_id}")
+        if not GITHUB_PATH:
+            logger.error("GITHUB_PATH is not set.")
             return False
-        logger.debug(f"Downloading {file_name} from folder ID: {folder_id}")
-        query = f"name='{file_name}' and '{folder_id}' in parents and trashed=false"
-        response = drive_service.files().list(q=query, fields='files(id, name)').execute()
-        files = response.get('files', [])
-        if not files:
-            logger.info(f"No {file_name} found in Google Drive. Starting with a new database.")
+
+        logger.debug(f"Downloading {file_name} from GitHub: {GITHUB_REPO}/{GITHUB_PATH}")
+
+        # Fetch the file
+        response = requests.get(GITHUB_API_URL, headers=HEADERS)
+        if response.status_code == 404:
+            logger.info(f"No {file_name} found in GitHub repository. Starting with a new database.")
             return False
-        file_id = files[0]['id']
-        request = drive_service.files().get_media(fileId=file_id)
-        fh = io.FileIO(destination_path, 'wb')
-        downloader = MediaIoBaseDownload(fh, request)
-        done = False
-        while done is False:
-            status, done = downloader.next_chunk()
-            logger.debug(f"Download {file_name}: {int(status.progress() * 100)}%")
-        logger.info(f"Downloaded {file_name} from Google Drive to {destination_path}")
+        elif response.status_code != 200:
+            logger.error(f"Failed to fetch {file_name} from GitHub: {response.status_code} - {response.text}")
+            return False
+
+        # Decode and save the file
+        content = base64.b64decode(response.json()["content"])
+        with open(destination_path, "wb") as f:
+            f.write(content)
+        logger.info(f"Downloaded {file_name} from GitHub to {destination_path}")
         return True
     except Exception as e:
-        logger.error(f"Error downloading {file_name} from Google Drive: {e}", exc_info=True)
+        logger.error(f"Error downloading {file_name} from GitHub: {e}", exc_info=True)
         return False
 
 # Global state
@@ -220,10 +179,10 @@ last_valid_price = None
 # SQLite database setup
 def setup_database():
     global conn
-    db_path = 'renda_bot.db'
+    db_path = 'renda_bot.db'   # database
     try:
-        if download_from_google_drive('renda_bot.db', GOOGLE_DRIVE_FOLDER_ID, db_path):
-            logger.info(f"Restored database from Google Drive to {db_path}")
+        if download_from_github('renda_bot.db', db_path):    # database
+            logger.info(f"Restored database from GitHub to {db_path}")
         else:
             logger.info(f"No existing database found. Creating new database at {db_path}")
         conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -358,7 +317,7 @@ def add_technical_indicators(df):
         logger.error(f"Error calculating indicators: {e}")
         return df
 
-# AI decision logic
+# AI decision logic (UNCHANGED from previous request)
 def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAKE_PROFIT_PERCENT, position=None, buy_price=None):
     if df.empty or len(df) < 1:
         logger.warning("DataFrame is empty or too small for decision.")
@@ -392,10 +351,10 @@ def ai_decision(df, stop_loss_percent=STOP_LOSS_PERCENT, take_profit_percent=TAK
             action = "sell"
 
     if action == "hold" and position is None:
-        if (close_price > open_price and ema1 > ema2 and kdj_j < 119.00) or \
-           (close_price > open_price and kdj_j > kdj_d and kdj_j < 118.00) or \
+        if (close_price > open_price and ema1 > ema2 and kdj_j < 117.00) or \
+           (close_price > open_price and kdj_j > kdj_d and kdj_j < 116.00) or \
            (rsi < 9.00) or \
-           (kdj_j < -24.00):
+           (kdj_j < -22.00):
             logger.info(f"Buy signal detected: close={close_price:.2f}, open={open_price:.2f}, ema1={ema1:.2f}, ema2={ema2:.2f}, kdj_j={kdj_j:.2f}, rsi={rsi:.2f}")
             action = "buy"
 
@@ -515,7 +474,7 @@ def trading_bot():
                 logger.error(f"Failed to fetch historical data for {SYMBOL}.")
                 return
 
-    interval_seconds = INTER_SECONDS # os.getenv(inter_seconds) 60  Force 1-minute updates
+    interval_seconds = INTER_SECONDS   #  used timing
     logger.info(f"Using interval of {interval_seconds} seconds for timeframe {TIMEFRAME}")
 
     seconds_to_next, next_boundary = align_to_next_boundary(interval_seconds)
@@ -764,7 +723,7 @@ def store_signal(signal):
         ))
         conn.commit()
         logger.debug("Signal stored successfully")
-        upload_to_google_drive('renda_bot.db', 'renda_bot.db', GOOGLE_DRIVE_FOLDER_ID)
+        upload_to_github('renda_bot.db', 'renda_bot.db')  # upload_to_github('r_bot.db', 'data/r_bot.db')  # upload_to_github('r_bot.db', 'r_bot.db')   #  database
     except Exception as e:
         logger.error(f"Error storing signal: {e}")
 
