@@ -4,9 +4,6 @@ numpy==1.26.4
 ccxt==4.3.10
 pandas_ta==0.3.14b0
 python-telegram-bot==13.7
-google-auth==2.23.0
-google-auth-httplib2==0.2.0
-google-api-python-client==2.100.0
 requests==2.31.0
 python-dotenv==1.0.0
 gunicorn==22.0.0
