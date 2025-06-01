@@ -43,7 +43,7 @@ app = Flask(__name__)
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN", "BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID", "CHAT_ID")
-SYMBOL = os.getenv("SYMBOL", "BTC/USD")
+SYMBOL = os.getenv("SYMBOL", "SYMBOL")
 TIMEFRAME = os.getenv("TIMEFRAME", "TIMEFRAME")
 STOP_LOSS_PERCENT = float(os.getenv("STOP_LOSS_PERCENT", -0.15))
 TAKE_PROFIT_PERCENT = float(os.getenv("TAKE_PROFIT_PERCENT", 2.0))
