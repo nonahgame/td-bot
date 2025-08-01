@@ -1,7 +1,7 @@
 # app.py
 # simple timeframe_seconds = {'1m': 60, '5m': 300, '15m': 900, '30m': 1800, '1h': 3600, '1d': 86400}.get(TIMEFRAME, 300
 import os
-from dotenv import load_dotenv
+#from dotenv import load_dotenv
 import pandas as pd
 import numpy as np
 import sqlite3
@@ -18,7 +18,7 @@ from flask import Flask, render_template, jsonify
 import atexit
 import base64
 import json
-
+#load_dotenv()
 # Configure logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
